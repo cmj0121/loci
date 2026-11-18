@@ -131,6 +131,7 @@ The full rules are in the [specification](doc/spec.md).
 
 - [Specification](doc/spec.md) — how the memory behaves: functions and notes, builds,
   recovery, pruning and configuration.
+- [Measurement](doc/measurement.md) — how speed and token usage are measured.
 
 ## License
 

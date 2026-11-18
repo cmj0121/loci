@@ -126,6 +126,7 @@ hook missed ───────────────> rebuild on start, by 
 ## 文件
 
 - [規格](doc/spec.zh-TW.md)——記憶的行為：function 與 note、建立、復原、清除與設定。
+- [量測](doc/measurement.zh-TW.md)——速度與 token 用量要怎麼量測。
 
 ## 授權
 
