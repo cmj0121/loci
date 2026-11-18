@@ -1,31 +1,42 @@
 # Loci
 
-> A local, git-aware memory of your code.
+> Ask how your code works, not where a name is.
 
 English | [繁體中文](README.zh-TW.md)
 
-Loci keeps a memory of your code — where things are and what they mean — and keeps it in step
-with git. AI coding agents ask Loci instead of searching the whole repository, so they reach
-the right file and line with far fewer tokens.
+Loci answers questions about a behaviour with the functions that carry it, and why they are
+written that way: a location and a one-line note. It keeps that memory local and in step with
+git.
+
+```text
+> what happens to sign-in when the session has expired?
+loci  auth/session.rs:88  refresh_or_reject
+      an expired token is refreshed once, then rejected (note @a1b2c3)
+```
+
+Looking up a name or a keyword is text search's job. Text search finds a function in one or
+two calls, even on a large repository; Loci does not try to beat it there.
 
 ## Why
 
-An agent that starts cold on a repository spends most of its budget finding its way: it greps,
-opens files, reads far more than it needs, and repeats the same search in the next session.
-What it learns is thrown away when the session ends.
+An agent that starts cold on a repository can find a name quickly, but not the reason behind
+the code. It reads far more than it needs to learn why, and the next session learns it again.
 
-Loci turns that into a lookup:
+Loci keeps what was learned:
 
-- **Where is it?** Functions, answered by file and location.
-- **What is it for?** A short concept note per function, left for the next agent.
+- **How does it work?** A question about a behaviour, answered with the functions that carry it.
+- **Why is it written that way?** A one-line note per function, left for the next agent.
 - **For which revision?** The commit you have checked out, not a stale snapshot.
+
+Gate 0 found a gain on concept questions only, with notes handed over by a prompt hook. It ran
+with a stand-in, not Loci itself; see [the results](doc/measurement.md#3-gate-0-results).
 
 ## Concept
 
 ```text
   ┌──────────────────┐  ┌──────────────────┐      ┌──────────────────────────┐
   │ git hooks        │  │ command line     │      │ agent                    │
-  │ (per repository) │  │ e.g. rebuild     │      │ skill: when and how      │
+  │ (per repository) │  │ e.g. rebuild     │      │ skill + prompt hook      │
   └────────┬─────────┘  └────────┬─────────┘      └──────────────────────────┘
            │                     │                             ▲
            │ git event           │ command                     │ ask, answer
@@ -33,9 +44,9 @@ Loci turns that into a lookup:
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │ Loci                                                                         │
 │ ┌────────────────────────────────────────┐  ┌──────────────────────────────┐ │
-│ │ event receiver                         │  │ MCP server                   │ │
-│ │ takes git events and commands,         │  │ finds functions and notes,   │ │
-│ │ returns at once                        │  │ writes and updates notes     │ │
+│ │ event receiver                         │  │ loci CLI                     │ │
+│ │ takes git events and commands,         │  │ find, show, search, outline; │ │
+│ │ returns at once                        │  │ suggest; writes notes        │ │
 │ └───────────────────┬────────────────────┘  └──────────────────────────────┘ │
 │                     │                                        ▲               │
 │                     ▼                                        │               │
@@ -59,16 +70,19 @@ Loci turns that into a lookup:
 ```
 
 - **Code memory.** Two layers: symbols that Loci parses out of the source — each function's
-  name, file and location — and one concept note per function, written by the LLM. Loci
-  never calls an LLM itself.
+  name, file and location — and a concept note per function, written by the LLM. Loci never
+  calls an LLM itself.
+- **Notes on demand.** Notes are written for functions that are asked about or recently
+  changed, not for every function up front. This is the direction; gate 1 must validate it.
 - **Git-aware.** Git operations are the trigger. A commit builds its memory, a checkout
   switches to the memory of that revision, and dropping branches or commits prunes what
   nothing can reach any more.
 - **A standalone service.** One personal, local service for all your projects, with a global
   setup that each repository can override through a `.loci` file.
-- **Shared by agents.** A skill tells the agent when to ask Loci; an MCP server gives it the
-  tools to look things up and to write notes back. What one agent works out, the next one
-  starts with.
+- **Shared by agents.** A prompt hook (`UserPromptSubmit`) runs `loci suggest` and injects
+  candidate functions. The `loci` CLI (`find`, `show`, `search`, `outline`) and its skill let
+  the agent look further and write notes back. There is no MCP server. What one agent works
+  out, the next one starts with.
 
 ## Flow
 
@@ -92,7 +106,13 @@ What happens from a commit to an agent's answer:
                 │
                 ▼
 ┌──────────────────────────────┐
-│ agent asks through MCP       │
+│ prompt submitted: the hook   │
+│ runs loci suggest            │
+└───────────────┬──────────────┘
+                │ candidates injected
+                ▼
+┌──────────────────────────────┐
+│ agent asks the loci CLI      │
 └───────────────┬──────────────┘
                 │
                 ▼
@@ -100,11 +120,11 @@ What happens from a commit to an agent's answer:
 │ answer: location, note,      │
 │ and the commit it describes  │
 └───────────────┬──────────────┘
-                │ note needs update
+                │ note missing or stale
                 ▼
 ┌──────────────────────────────┐
 │ agent reads the code, writes │
-│ the new note through MCP     │
+│ the note through the CLI     │
 └──────────────────────────────┘
 ```
 
@@ -127,11 +147,17 @@ The full rules are in the [specification](doc/spec.md).
 - **Revision-true.** An answer always describes the code of the commit it names.
 - **Small answers.** A reply is a location and a line or two, not a file dump.
 
+## Roadmap
+
+- **Feature maps.** Answer "which functions take part in X". Not a current feature: it comes
+  only after gate 1 shows it beats text search.
+
 ## Documentation
 
 - [Specification](doc/spec.md) — how the memory behaves: functions and notes, builds,
   recovery, pruning and configuration.
-- [Measurement](doc/measurement.md) — how speed and token usage are measured.
+- [Measurement](doc/measurement.md) — how speed and token usage are measured, and the gate 0
+  results.
 
 ## License
 

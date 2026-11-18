@@ -5,6 +5,9 @@
 本文件定義 Loci 的行為：記憶裡有什麼、什麼時候會改變，而不是它如何實作。
 背後的想法請看 [README](../README.zh-TW.md)。
 
+**狀態：暫定。** Notes 怎麼寫入，以及 passive/active 的切換，都要等 gate 1 決定。
+[Gate 0](measurement.zh-TW.md#3-gate-0-結果) 之後，agent 的介面已從 MCP 改為 prompt hook 加 CLI。
+
 ## 1. 範圍
 
 - Loci 是個人使用的工具。一個本機 service 服務同一台機器上的所有專案。
@@ -18,13 +21,13 @@
 | 層級    | 內容                             | 由誰寫入           |
 | ------- | -------------------------------- | ------------------ |
 | Symbols | 每個 function 的名稱、檔案與位置 | Loci，透過 parsing |
-| Notes   | 每個 function 一則 concept note  | LLM，透過 MCP      |
+| Notes   | 每個 function 一則 concept note  | LLM，透過 CLI      |
 
 每個部分各有一件工作：
 
 - **tree-sitter** 把每個 function 抽象成名稱、所在檔案與位置；
 - **LLM** 依照 skill 的指引，為每個 function 寫一則 note；
-- **MCP** 是寫入與更新 note 的途徑。
+- **`loci` CLI** 是寫入與更新 note 的途徑。
 
 Symbols 是以 deterministic 的方式抽取的，所以隨時可以從 repository 重建。
 Notes 不行：它是記憶裡唯一不是從程式碼推導出來的部分。
@@ -61,7 +64,7 @@ Note 有兩種狀態。
 | 待更新 | note 寫好之後，function 又改變了 | 先前的 note，並帶著此標示 |
 
 待更新的 note 仍然會回傳，讓 agent 可以把先前的概念當成線索。Skill 會告訴 agent 看到這個標示時
-該怎麼做：先讀程式碼，再透過 MCP 寫下新的 note。寫入之後，該 commit 的 note 就成為最新；
+該怎麼做：先讀程式碼，再透過 `loci` CLI 寫下新的 note。寫入之後，該 commit 的 note 就成為最新；
 先前的 commit 則保有它原本的 note。
 
 ## 5. 建立記憶
@@ -121,7 +124,12 @@ Repository 的設定也可以限制要保留多少記憶（第 8 節）。
 
 - **Skill。** 告訴 agent 什麼時候該問 Loci 而不是做全文搜尋、如何為 function 寫 note、
   遇到待更新的 note 該怎麼做，以及如何要求重建。
-- **MCP。** Agent 呼叫的工具：查詢 function 在哪裡、讀取它的 note、寫入或更新 note。
+- **Prompt hook。** `UserPromptSubmit` hook 在每次 prompt 時執行 `loci suggest`，注入可能相關的 function。
+  沒有符合的就不注入任何東西。
+- **CLI。** Agent 執行的 `loci` 指令：用 `find`、`show`、`search` 與 `outline` 查詢 function 並讀取它的 note，
+  以及一個寫入或更新 note 的指令。
+
+沒有 MCP server。
 
 答案要小：一個位置加上一兩行，而不是整個檔案。
 
@@ -129,7 +137,7 @@ Repository 的設定也可以限制要保留多少記憶（第 8 節）。
 
 尚未決定：
 
-- MCP 工具的清單，以及答案的格式；
+- 寫入 note 的 `loci` 指令，以及每個指令答案的格式；
 - `.loci` 檔接受哪些設定，以及它的格式；
 - 「保留多少」是以什麼計算——revision 數量、時間或容量——以及先丟棄哪些；
 - 清除時如何對待 notes，因為 notes 無法重建；
