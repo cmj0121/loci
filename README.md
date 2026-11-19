@@ -4,6 +4,11 @@
 
 English | [繁體中文](README.zh-TW.md)
 
+**Status: closed.** Loci was measured before it was built, and it does not pay off: no
+version beat plain text search on both tokens and cost in a reproducible way. It is not being
+built. See [the results](doc/measurement.md#3-results). The rest of this page describes the
+hypothesis that was tested.
+
 Loci answers questions about a behaviour with the functions that carry it, and why they are
 written that way: a location and a one-line note. It keeps that memory local and in step with
 git.
@@ -28,8 +33,8 @@ Loci keeps what was learned:
 - **Why is it written that way?** A one-line note per function, left for the next agent.
 - **For which revision?** The commit you have checked out, not a stale snapshot.
 
-Gate 0 found a gain on concept questions only, with notes handed over by a prompt hook. It ran
-with a stand-in, not Loci itself; see [the results](doc/measurement.md#3-gate-0-results).
+The benchmark tested this with a stand-in for Loci. Its one gain, notes on concept questions
+handed over by a prompt hook, did not replicate; see [the results](doc/measurement.md#3-results).
 
 ## Concept
 
@@ -73,7 +78,7 @@ with a stand-in, not Loci itself; see [the results](doc/measurement.md#3-gate-0-
   name, file and location — and a concept note per function, written by the LLM. Loci never
   calls an LLM itself.
 - **Notes on demand.** Notes are written for functions that are asked about or recently
-  changed, not for every function up front. This is the direction; gate 1 must validate it.
+  changed, not for every function up front. Gate 1 tested this, and it did not pay off.
 - **Git-aware.** Git operations are the trigger. A commit builds its memory, a checkout
   switches to the memory of that revision, and dropping branches or commits prunes what
   nothing can reach any more.
@@ -149,15 +154,15 @@ The full rules are in the [specification](doc/spec.md).
 
 ## Roadmap
 
-- **Feature maps.** Answer "which functions take part in X". Not a current feature: it comes
-  only after gate 1 shows it beats text search.
+- **Feature maps.** Answer "which functions take part in X". Dropped: in gate 1 it did not beat
+  text search.
 
 ## Documentation
 
 - [Specification](doc/spec.md) — how the memory behaves: functions and notes, builds,
   recovery, pruning and configuration.
-- [Measurement](doc/measurement.md) — how speed and token usage are measured, and the gate 0
-  results.
+- [Measurement](doc/measurement.md) — how speed and token usage are measured, and the results
+  that closed the project.
 
 ## License
 

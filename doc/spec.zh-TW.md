@@ -5,8 +5,7 @@
 本文件定義 Loci 的行為：記憶裡有什麼、什麼時候會改變，而不是它如何實作。
 背後的想法請看 [README](../README.zh-TW.md)。
 
-**狀態：暫定。** Notes 怎麼寫入，以及 passive/active 的切換，都要等 gate 1 決定。
-[Gate 0](measurement.zh-TW.md#3-gate-0-結果) 之後，agent 的介面已從 MCP 改為 prompt hook 加 CLI。
+**狀態：未實作。** Benchmark 不支持 Loci，所以這份規格不會被實作；請看[結果](measurement.zh-TW.md#3-結果)。
 
 ## 1. 範圍
 

@@ -5,9 +5,8 @@ English | [繁體中文](spec.zh-TW.md)
 This document specifies how Loci behaves. It says what the memory holds and when it changes,
 not how it is implemented. For the idea behind it, read the [README](../README.md).
 
-**Status: provisional.** How notes get written and the passive/active switch are pending gate 1.
-The agent interface moved from MCP to a prompt hook and a CLI after
-[gate 0](measurement.md#3-gate-0-results).
+**Status: not implemented.** The benchmark did not support Loci, so this specification will not
+be built; see [the results](measurement.md#3-results).
 
 ## 1. Scope
 

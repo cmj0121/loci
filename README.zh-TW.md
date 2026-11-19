@@ -4,6 +4,10 @@
 
 [English](README.md) | 繁體中文
 
+**狀態：已結束。** Loci 在實作之前先做了量測，結果並不划算：沒有任何版本能以可重現的方式，
+在 token 與成本上都贏過單純的全文搜尋。Loci 不會被實作。請看[結果](doc/measurement.zh-TW.md#3-結果)。
+本頁其餘內容描述的是被測試的假設。
+
 Loci 回答關於某個行為的問題：它給出承載這個行為的 function，以及它們為什麼這樣寫——一個位置加上一行 note。
 這份記憶留在本機，並且與 git 保持同步。
 
@@ -27,8 +31,8 @@ Loci 把學到的東西留下來：
 - **為什麼這樣寫？** 每個 function 一行 note，留給下一個 agent。
 - **是哪個 revision？** 你目前 checkout 的那個 commit，不是過期的快照。
 
-Gate 0 只在概念問題上看到收益，而且要靠 prompt hook 送上 notes。它用的是替身，不是 Loci 本身；
-請看[結果](doc/measurement.zh-TW.md#3-gate-0-結果)。
+Benchmark 用 Loci 的替身測試了這一點。它唯一的收益——用 prompt hook 送上 notes 回答概念問題——沒有重現；
+請看[結果](doc/measurement.zh-TW.md#3-結果)。
 
 ## 概念
 
@@ -71,7 +75,7 @@ Gate 0 只在概念問題上看到收益，而且要靠 prompt hook 送上 notes
 - **Code memory。** 分成兩層：Loci 從原始碼 parse 出來的 symbols——每個 function 的名稱、
   檔案與位置——以及由 LLM 為每個 function 撰寫的 concept note。Loci 本身不呼叫 LLM。
 - **需要時才寫 notes。** 只替被問到或最近改過的 function 寫 notes，而不是事先替每個 function 都寫。
-  這是目前的方向，要由 gate 1 驗證。
+  Gate 1 測試了這一點，結果並不划算。
 - **Git-aware。** Git 操作就是觸發點。Commit 會建立它的記憶，checkout 會切換到該 revision
   的記憶，刪除 branch 或丟棄 commit 則會清除再也用不到的部分。
 - **獨立的 service。** 一個個人、本機的 service 服務你所有的專案；有一份 global setup，
@@ -145,12 +149,12 @@ hook missed ───────────────> rebuild on start, by 
 
 ## 路線圖
 
-- **Feature map。** 回答「哪些 function 參與了 X」。這不是目前的功能：要等 gate 1 證明它贏過全文搜尋之後才做。
+- **Feature map。** 回答「哪些 function 參與了 X」。已放棄：在 gate 1 它沒有贏過全文搜尋。
 
 ## 文件
 
 - [規格](doc/spec.zh-TW.md)——記憶的行為：function 與 note、建立、復原、清除與設定。
-- [量測](doc/measurement.zh-TW.md)——速度與 token 用量要怎麼量測，以及 gate 0 的結果。
+- [量測](doc/measurement.zh-TW.md)——速度與 token 用量要怎麼量測，以及讓專案結束的結果。
 
 ## 授權
 
