@@ -5,6 +5,9 @@ English | [繁體中文](spec.zh-TW.md)
 This document specifies how Loci behaves. It says what the memory holds and when it changes,
 not how it is implemented. For the idea behind it, read the [README](../README.md).
 
+**Status: not implemented.** The benchmark did not support Loci, so this specification will not
+be built; see [the results](measurement.md#3-results).
+
 ## 1. Scope
 
 - Loci is a personal tool. One local service serves every project on one machine.
@@ -19,13 +22,13 @@ The memory has two layers.
 | Layer   | What it holds                           | Who writes it        |
 | ------- | --------------------------------------- | -------------------- |
 | Symbols | each function's name, file and location | Loci, by parsing     |
-| Notes   | one concept note per function           | the LLM, through MCP |
+| Notes   | one concept note per function           | the LLM, through CLI |
 
 Each part has one job:
 
 - **tree-sitter** abstracts every function to its name, its file and its location;
 - **the LLM** writes one note per function, guided by the skill;
-- **MCP** is how that note is written and updated.
+- **the `loci` CLI** is how that note is written and updated.
 
 Symbols are extracted deterministically, so they can always be rebuilt from the repository.
 Notes cannot: they are the only part of the memory that is not derived from the code.
@@ -64,7 +67,7 @@ A note is in one of two states.
 
 A note that needs an update is still returned, so the agent has the earlier concept as a lead.
 The skill tells the agent what to do with the mark: read the code, then write the new note
-through MCP. Writing it makes the note current for that commit; earlier commits keep the note
+through the `loci` CLI. Writing it makes the note current for that commit; earlier commits keep the note
 they had.
 
 ## 5. Building the memory
@@ -134,8 +137,12 @@ Every agent working on a project reads and writes the same memory.
 - **Skill.** Tells the agent when to ask Loci instead of searching the full text, how to
   write a note for a function, what to do with a note that needs an update, and how to ask
   for a rebuild.
-- **MCP.** The tools the agent calls: look up where a function is, read its note, write or
-  update a note.
+- **Prompt hook.** A `UserPromptSubmit` hook runs `loci suggest` on each prompt and injects
+  the likely relevant functions. Nothing is injected when nothing matches.
+- **CLI.** The `loci` commands the agent runs: `find`, `show`, `search` and `outline` to look
+  up a function and read its note, and a command to write or update a note.
+
+There is no MCP server.
 
 Answers are small: a location and a line or two, not a file dump.
 
@@ -143,7 +150,7 @@ Answers are small: a location and a line or two, not a file dump.
 
 Not decided yet:
 
-- the list of MCP tools and the shape of their answers;
+- the `loci` command that writes a note, and the shape of every command's answer;
 - the settings a `.loci` file accepts, and its format;
 - what "how much is kept" counts — revisions, age or size — and what is dropped first;
 - how pruning treats notes, given that notes cannot be rebuilt;
