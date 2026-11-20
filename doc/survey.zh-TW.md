@@ -19,3 +19,10 @@ gate 量測已經證明 Loci 不適合當找 code 的工具（見[量測](measur
 可重用的規則。但下一個錯幾乎都是新的：一個 bug 被寫出來之前就已經存在的 lesson，只能預防約 0.75% 的
 這類 bug，以及約 0.5% 的 PR 內修正輪次。agent 也幾乎不去挖歷史（只占 model input 的 3.45%），所以沒有
 查詢成本可以替代。[結果](results/survey-2-fix-lessons.md)
+
+## 3. review 一再重複的，是沒有人寫下來的團隊慣例
+
+在繁忙的團隊 repository 裡，看得見的成本是 review 的往返，而不是找 code：大部分 PR 至少被退回一次。
+三分之一的 review 留言，重複的是已經在三個以上 PR 提過的規則，而且這些規則大多沒有寫進 repository
+自己的 agent 規則。git 保留了其中一部分知識：39% 的 review 留言，在 follow-up commit 的 message 裡
+寫出了那條規則。[結果](results/survey-3-reviews.md)

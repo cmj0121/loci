@@ -22,3 +22,11 @@ of them into accurate, reusable rules. But the next mistake is almost always a n
 known before a later bug was written would have prevented about 0.75% of those bugs and about
 0.5% of in-PR fix rounds. Agents also hardly dig into history (3.45% of model input), so there
 is no lookup cost to replace. [Results](results/survey-2-fix-lessons.md)
+
+## 3. Review rounds repeat team conventions nobody wrote down
+
+The visible cost in a busy team repository is the review round trip, not finding code: most
+pull requests are sent back at least once. A third of review comments repeat a rule already
+raised in three or more pull requests, and most of those rules are not in the repository's own
+agent rules. Git keeps part of this knowledge: a follow-up commit message states the rule for
+39% of review comments. [Results](results/survey-3-reviews.md)
