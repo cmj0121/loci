@@ -38,3 +38,12 @@ pre-push check catches, and dumping every rule as text does worse than no rules 
 review round holds several requests, so catching one rarely removes the round: the check avoided
 2.7% of rounds against 1.8% with no rules, and it cost more tokens than it saved. Most mined rules
 also never recur: 96% appear in one pull request. [Results](results/survey-4-precheck.md)
+
+## 5. What Loci keeps: deterministic convention checks and the eval method
+
+No memory delivered to an agent paid for itself, and learning review conventions from history is
+already a product category in 2026. What remains worth keeping is narrow: mining the few
+conventions that recur, and turning each into a written rule or a deterministic check that runs
+on every change; and the eval method itself (time cutoffs, no-rules and plain-text controls, a
+blind judge, review rounds, measured round cost), which existing tools cover only in part. Loci is
+not continued as a product. [Results](results/survey-5-tools.md)

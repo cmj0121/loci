@@ -5,7 +5,8 @@
 [English](README.md) | 繁體中文
 
 **狀態：已結束。** Loci 在實作之前先做了量測，結果並不划算：沒有任何版本能以可重現的方式，
-在 token 與成本上都贏過單純的全文搜尋。Loci 不會被實作。請看[結果](doc/measurement.zh-TW.md#3-結果)。
+在 token 與成本上都贏過單純的全文搜尋。之後嘗試的 agent 記憶也都沒有回本：過去的 session、過去的 fix，
+以及 push 前用來檢查的 review 規則。請看[結果](doc/measurement.zh-TW.md#3-結果)和[調查](doc/survey.zh-TW.md)。
 本頁其餘內容描述的是被測試的假設。
 
 Loci 回答關於某個行為的問題：它給出承載這個行為的 function，以及它們為什麼這樣寫——一個位置加上一行 note。
@@ -155,6 +156,7 @@ hook missed ───────────────> rebuild on start, by 
 
 - [規格](doc/spec.zh-TW.md)——記憶的行為：function 與 note、建立、復原、清除與設定。
 - [量測](doc/measurement.zh-TW.md)——速度與 token 用量要怎麼量測，以及讓專案結束的結果。
+- [調查](doc/survey.zh-TW.md)——之後嘗試過的各種記憶，每項一個結論，以及 Loci 保留了什麼。
 
 ## 授權
 

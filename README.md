@@ -5,9 +5,10 @@
 English | [繁體中文](README.zh-TW.md)
 
 **Status: closed.** Loci was measured before it was built, and it does not pay off: no
-version beat plain text search on both tokens and cost in a reproducible way. It is not being
-built. See [the results](doc/measurement.md#3-results). The rest of this page describes the
-hypothesis that was tested.
+version beat plain text search on both tokens and cost in a reproducible way. Later memories
+for agents did not pay either: of past sessions, of past fixes, or of review rules checked before
+a push. See [the results](doc/measurement.md#3-results) and [the survey](doc/survey.md). The rest
+of this page describes the hypothesis that was tested.
 
 Loci answers questions about a behaviour with the functions that carry it, and why they are
 written that way: a location and a one-line note. It keeps that memory local and in step with
@@ -163,6 +164,7 @@ The full rules are in the [specification](doc/spec.md).
   recovery, pruning and configuration.
 - [Measurement](doc/measurement.md) — how speed and token usage are measured, and the results
   that closed the project.
+- [Survey](doc/survey.md) — the memories tried afterwards, one conclusion each, and what Loci keeps.
 
 ## License
 
