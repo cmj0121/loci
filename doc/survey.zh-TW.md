@@ -26,3 +26,10 @@ gate 量測已經證明 Loci 不適合當找 code 的工具（見[量測](measur
 三分之一的 review 留言，重複的是已經在三個以上 PR 提過的規則，而且這些規則大多沒有寫進 repository
 自己的 agent 規則。git 保留了其中一部分知識：39% 的 review 留言，在 follow-up commit 的 message 裡
 寫出了那條規則。[結果](results/survey-3-reviews.md)
+
+## 4. push 前的規則檢查多抓到一些問題，但省不到 review 輪數
+
+從 git 挖出規則，再依改動碰到的路徑挑選，抓到的問題大約是單純 push 前檢查的兩倍；把全部規則當純文字
+塞進去，反而比完全不給規則還差。但一輪 review 通常包含好幾個要求，抓到其中一個，很少能讓整輪消失：
+這個檢查避免了 2.7% 的輪數，不給規則時是 1.8%，而且花掉的 token 比省下的多。挖出來的規則大多也不會
+再出現：96% 只出現在一個 PR。[結果](results/survey-4-precheck.md)

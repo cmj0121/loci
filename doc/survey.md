@@ -30,3 +30,11 @@ pull requests are sent back at least once. A third of review comments repeat a r
 raised in three or more pull requests, and most of those rules are not in the repository's own
 agent rules. Git keeps part of this knowledge: a follow-up commit message states the rule for
 39% of review comments. [Results](results/survey-3-reviews.md)
+
+## 4. A pre-push rule check finds more, but saves no review rounds
+
+Rules mined from git and selected by the paths a change touches roughly double what a plain
+pre-push check catches, and dumping every rule as text does worse than no rules at all. But a
+review round holds several requests, so catching one rarely removes the round: the check avoided
+2.7% of rounds against 1.8% with no rules, and it cost more tokens than it saved. Most mined rules
+also never recur: 96% appear in one pull request. [Results](results/survey-4-precheck.md)
