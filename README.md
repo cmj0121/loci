@@ -1,171 +1,131 @@
 # Loci
 
-> Ask how your code works, not where a name is.
+> Start each task with a clean context, and keep what git knows.
 
 English | [繁體中文](README.zh-TW.md)
 
-**Status: closed.** Loci was measured before it was built, and it does not pay off: no
-version beat plain text search on both tokens and cost in a reproducible way. Later memories
-for agents did not pay either: of past sessions, of past fixes, or of review rules checked before
-a push. See [the results](doc/measurement.md#3-results) and [the survey](doc/survey.md). The rest
-of this page describes the hypothesis that was tested.
-
-Loci answers questions about a behaviour with the functions that carry it, and why they are
-written that way: a location and a one-line note. It keeps that memory local and in step with
-git.
+An agent that works through several tasks in one session carries every earlier task in its
+context. Most of what a long session pays for is that carried context, read again from the cache
+on every turn. Loci notices when a new task starts, a switch to a new git branch, and suggests
+`/clear`. The next session gets a short handoff built from git, so nothing git knows is lost.
 
 ```text
-> what happens to sign-in when the session has expired?
-loci  auth/session.rs:88  refresh_or_reject
-      an expired token is refreshed once, then rejected (note @a1b2c3)
+Loci: the branch changed from feat/gh-8380-scan-widget-elapsed to fix/gh-8388-crawler-qa-fixes
+while the context is 297k tokens. This is a task boundary. Tell the user they can run /clear
+now; Loci will hand the git state of fix/gh-8388-crawler-qa-fixes to the new session, so nothing
+from git is lost.
 ```
 
-Looking up a name or a keyword is text search's job. Text search finds a function in one or
-two calls, even on a large repository; Loci does not try to beat it there.
+On the task above, an agent run with Loci cost **$6.20 to $6.55 instead of $10.88 to $15.29**
+without it, and passed the same tests. See [the measurement](doc/handoff.md).
 
 ## Why
 
-An agent that starts cold on a repository can find a name quickly, but not the reason behind
-the code. It reads far more than it needs to learn why, and the next session learns it again.
+On one product repository, 97.8% of the tokens an agent used were cache reads: the carried
+context, 125k to 270k tokens, read again on every turn. Editing code was under 4%. A cache read
+is cheap per token, but it is paid on every turn, so it grows with how much earlier work the
+session still holds.
 
-Loci keeps what was learned:
+A git branch is a clear task boundary that the agent itself creates. Loci uses it:
 
-- **How does it work?** A question about a behaviour, answered with the functions that carry it.
-- **Why is it written that way?** A one-line note per function, left for the next agent.
-- **For which revision?** The commit you have checked out, not a stale snapshot.
+- **When:** a switch to a branch this session has not left before, on a large context.
+- **What:** a handoff of under 2k tokens, built from git alone. No model call, nothing guessed.
+- **How:** Claude Code hooks. Other agents can print the same handoff with `loci handoff`.
 
-The benchmark tested this with a stand-in for Loci. Its one gain, notes on concept questions
-handed over by a prompt hook, did not replicate; see [the results](doc/measurement.md#3-results).
-
-## Concept
-
-```text
-  ┌──────────────────┐  ┌──────────────────┐      ┌──────────────────────────┐
-  │ git hooks        │  │ command line     │      │ agent                    │
-  │ (per repository) │  │ e.g. rebuild     │      │ skill + prompt hook      │
-  └────────┬─────────┘  └────────┬─────────┘      └──────────────────────────┘
-           │                     │                             ▲
-           │ git event           │ command                     │ ask, answer
-           ▼                     ▼                             ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ Loci                                                                         │
-│ ┌────────────────────────────────────────┐  ┌──────────────────────────────┐ │
-│ │ event receiver                         │  │ loci CLI                     │ │
-│ │ takes git events and commands,         │  │ find, show, search, outline; │ │
-│ │ returns at once                        │  │ suggest; writes notes        │ │
-│ └───────────────────┬────────────────────┘  └──────────────────────────────┘ │
-│                     │                                        ▲               │
-│                     ▼                                        │               │
-│ ┌────────────────────────────────────────┐                   │               │
-│ │ builder                                │                   │               │
-│ │ parses each commit (tree-sitter),      │                   │ read, write   │
-│ │ publishes it all at once               │                   │               │
-│ └───────────────────┬────────────────────┘                   │               │
-│                     │ publish                                │               │
-│                     ▼                                        ▼               │
-│ ┌──────────────────────────────────────────────────────────────────────────┐ │
-│ │ data storage, per repository                                             │ │
-│ │ ┌────────────────────┐  ┌────────────────────┐  ┌────────────────────┐   │ │
-│ │ │ repo A             │  │ repo B             │  │ repo ...           │   │ │
-│ │ │ symbols + notes,   │  │ symbols + notes,   │  │ symbols + notes,   │   │ │
-│ │ │ per revision       │  │ per revision       │  │ per revision       │   │ │
-│ │ └────────────────────┘  └────────────────────┘  └────────────────────┘   │ │
-│ │ where and how much: global setup, overridden by each repo's .loci        │ │
-│ └──────────────────────────────────────────────────────────────────────────┘ │
-└──────────────────────────────────────────────────────────────────────────────┘
-```
-
-- **Code memory.** Two layers: symbols that Loci parses out of the source — each function's
-  name, file and location — and a concept note per function, written by the LLM. Loci never
-  calls an LLM itself.
-- **Notes on demand.** Notes are written for functions that are asked about or recently
-  changed, not for every function up front. Gate 1 tested this, and it did not pay off.
-- **Git-aware.** Git operations are the trigger. A commit builds its memory, a checkout
-  switches to the memory of that revision, and dropping branches or commits prunes what
-  nothing can reach any more.
-- **A standalone service.** One personal, local service for all your projects, with a global
-  setup that each repository can override through a `.loci` file.
-- **Shared by agents.** A prompt hook (`UserPromptSubmit`) runs `loci suggest` and injects
-  candidate functions. The `loci` CLI (`find`, `show`, `search`, `outline`) and its skill let
-  the agent look further and write notes back. There is no MCP server. What one agent works
-  out, the next one starts with.
-
-## Flow
-
-What happens from a commit to an agent's answer:
+## How it works
 
 ```text
-┌──────────────────────────────┐
-│ git commit                   │
-└───────────────┬──────────────┘
-                │ hook fires
-                ▼
-┌──────────────────────────────┐
-│ build the commit's memory    │   queries meanwhile get the
-│ in the background            │   last completed memory
-└───────────────┬──────────────┘
-                │ build complete
-                ▼
-┌──────────────────────────────┐
-│ publish all at once          │
-└───────────────┬──────────────┘
-                │
-                ▼
-┌──────────────────────────────┐
-│ prompt submitted: the hook   │
-│ runs loci suggest            │
-└───────────────┬──────────────┘
-                │ candidates injected
-                ▼
-┌──────────────────────────────┐
-│ agent asks the loci CLI      │
-└───────────────┬──────────────┘
-                │
-                ▼
-┌──────────────────────────────┐
-│ answer: location, note,      │
-│ and the commit it describes  │
-└───────────────┬──────────────┘
-                │ note missing or stale
-                ▼
-┌──────────────────────────────┐
-│ agent reads the code, writes │
-│ the note through the CLI     │
-└──────────────────────────────┘
+┌────────────┐  after a shell command  ┌──────────────────────────────┐
+│ Claude     │ ─────────────────────>  │ loci hook post-tool-use      │
+│ Code       │                         │ new branch, context ≥ 100k?  │
+│            │ <─────────────────────  │ yes: suggest /clear,         │
+│            │  "you can run /clear"   │ record a pending handoff     │
+│            │                         └──────────────┬───────────────┘
+│            │                                        │ .git/loci/state.json
+│            │  session starts after /clear           ▼
+│            │ ─────────────────────>  ┌──────────────────────────────┐
+│            │ <─────────────────────  │ loci hook session-start      │
+│            │  the git handoff        │ git: branch, issue, base,    │
+└────────────┘                         │ commits, changes, status     │
+                                       └──────────────────────────────┘
 ```
 
-The other triggers:
+The rule, applied after each shell command:
+
+| Switch                                               | Verdict                  |
+| ---------------------------------------------------- | ------------------------ |
+| to a branch this session already left                | revisit: mid-task, quiet |
+| to `main`, a release branch, the base or a skip glob | long-lived: quiet        |
+| to a new branch, context under the threshold         | small: quiet             |
+| to a new branch, context at or over the threshold    | suggest `/clear`         |
+
+The handoff names the repository, the branch and its issue, the previous branch, the base and
+merge-base, the upstream, the commits and changed files since the base, and what is uncommitted.
+It also tells the new session that the issue's text and decisions are not in its context.
+
+Loci never runs `/clear` itself: you decide. A handoff waits for the next cleared or new session
+for 24 hours. Hooks never fail the agent: errors go to `.git/loci/log`.
+
+## Install
+
+Loci is one Go binary.
+
+```bash
+make build                 # writes bin/loci
+bin/loci install -C ~/src/my-repo
+```
+
+`loci install` adds two hooks to the repository's `.claude/settings.local.json`, a file that is
+not shared with the team. It keeps your other settings. `loci install --uninstall` removes them.
+
+## Commands
+
+| Command                            | What it does                                                     |
+| ---------------------------------- | ---------------------------------------------------------------- |
+| `loci handoff [--format md\|json]` | Print the git handoff for the current branch, for any agent      |
+| `loci stats [--since 7d]`          | Count switches, suggestions, handoffs, and how many were adopted |
+| `loci replay`                      | Replay this repository's past sessions under the rule; estimate  |
+| `loci install [--uninstall]`       | Add or remove the Claude Code hooks                              |
+| `loci hook post-tool-use`          | The PostToolUse hook (JSON on stdin)                             |
+| `loci hook session-start`          | The SessionStart hook (JSON on stdin)                            |
+
+Every command takes `-C <dir>`; `stats` and `replay` take `--json`.
+
+`loci replay` reads the repository's transcripts under `~/.claude/projects` and shows what the
+rule would have saved, before you install anything:
 
 ```text
-checkout / switch ─────────> switch to that revision's memory
-branch or commit dropped ──> prune what nothing can reach
-hook missed ───────────────> rebuild on start, by command line or by skill
+purpose         tokens now → with Loci    cost units now → with Loci
+feature         509.5M → 280.1M (-45%)          61.2M → 38.7M (-37%)
+bugfix          158.5M → 108.5M (-32%)          19.8M → 15.0M (-24%)
+total           782.3M → 482.7M (-38%)          96.8M → 67.7M (-30%)
 ```
 
-The full rules are in the [specification](doc/spec.md).
+`loci stats` tells, after a week of real use, whether the suggestions were acted on.
 
-## Principles
+## Settings
 
-- **Personal and local.** Your code and its memory stay on your machine.
-- **Never in the way.** A git operation is never blocked or failed by Loci.
-- **Hook-driven.** Git operations build the memory at once; nothing waits for a query.
-- **All or nothing.** A commit's memory is visible only once it is completely built.
-- **Revision-true.** An answer always describes the code of the commit it names.
-- **Small answers.** A reply is a location and a line or two, not a file dump.
+All settings live in git config, per repository or global.
 
-## Roadmap
+| Key              | Default                                       | Meaning                                       |
+| ---------------- | --------------------------------------------- | --------------------------------------------- |
+| `loci.threshold` | `100000`                                      | Context tokens at which a switch is a handoff |
+| `loci.skip`      | `main`, `master`, `develop`, `release/*`, ... | More long-lived branch globs (`--add`)        |
+| `loci.base`      | `origin/main`, `origin/master`, ...           | The base the handoff compares with            |
 
-- **Feature maps.** Answer "which functions take part in X". Dropped: in gate 1 it did not beat
-  text search.
+## Limits
 
-## Documentation
+- It helps in proportion to the context at the switch: about 10% at 80k, about half at 300k.
+- What was decided in conversation, not in git or the tracker, does not survive `/clear`.
+- It reads the Claude Code transcript format, which is internal and may change; when it cannot
+  read the context, it counts it as 0 and stays quiet.
 
-- [Specification](doc/spec.md) — how the memory behaves: functions and notes, builds,
-  recovery, pruning and configuration.
-- [Measurement](doc/measurement.md) — how speed and token usage are measured, and the results
-  that closed the project.
-- [Survey](doc/survey.md) — the memories tried afterwards, one conclusion each, and what Loci keeps.
+## History
+
+Loci began as a local code memory for agents. That hypothesis was measured and closed; its
+[measurement](doc/measurement.md), [survey](doc/survey.md) and [spec](doc/spec.md) are kept as a
+record.
 
 ## License
 
-[MIT](LICENSE)
+See [LICENSE](LICENSE).
