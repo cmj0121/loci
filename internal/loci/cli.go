@@ -3,11 +3,13 @@
 package loci
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/alecthomas/kong"
 )
@@ -111,11 +113,27 @@ func (c *InstallCmd) Run(e *env) error {
 }
 
 type StatsCmd struct {
-	Dir  string `short:"C" default:"." help:"Repository directory."`
-	JSON bool   `name:"json" help:"Print JSON instead of a table."`
+	Dir   string `short:"C" default:"." help:"Repository directory."`
+	Since window `help:"Only the last period, such as 7d or 36h (default: everything)."`
+	JSON  bool   `name:"json" help:"Print JSON instead of a table."`
 }
 
-func (c *StatsCmd) Run(e *env) error { return errNotImplemented }
+func (c *StatsCmd) Run(e *env) error {
+	s, err := Gather(c.Dir, time.Duration(c.Since), now())
+	if err != nil {
+		return err
+	}
+	if !c.JSON {
+		_, err = fmt.Fprint(e.stdout, s.Table())
+		return err
+	}
+	enc := json.NewEncoder(e.stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(struct {
+		Stats
+		Adoption float64 `json:"adoption"`
+	}{s, s.Adoption()})
+}
 
 type ReplayCmd struct {
 	Dir  string `short:"C" default:"." help:"Repository whose agent sessions are replayed."`
