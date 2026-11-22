@@ -19,9 +19,10 @@ type HookInput struct {
 	ToolName       string `json:"tool_name"`
 	Source         string `json:"source"` // SessionStart: startup, resume, clear, compact
 	// AgentID is set when the hook fires inside a subagent; TranscriptPath is
-	// still the main session's.
-	AgentID   string `json:"agent_id"`
-	AgentType string `json:"agent_type"`
+	// still the main session's, AgentTranscriptPath (SubagentStop) the subagent's.
+	AgentID             string `json:"agent_id"`
+	AgentType           string `json:"agent_type"`
+	AgentTranscriptPath string `json:"agent_transcript_path"`
 }
 
 type hookOutput struct {
@@ -134,6 +135,25 @@ func SessionStart(in HookInput, w worktree, log zerolog.Logger) (string, error) 
 	log.Info().Str("session", in.SessionID).Str("source", in.Source).Str("from", p.From).Str("to", f.Branch).
 		Int("context", p.Context).Int("chars", len(md)).Msg(msgHandoff)
 	return md, nil
+}
+
+// SubagentStop records the context a subagent ended with: tokens its work
+// read that never entered the main session. It tells the agent nothing.
+func SubagentStop(in HookInput, w worktree, log zerolog.Logger) (string, error) {
+	if in.AgentID == "" || in.AgentTranscriptPath == "" {
+		return "", nil
+	}
+	ctx, err := SubagentTokens(in.AgentTranscriptPath)
+	if err != nil {
+		log.Warn().Err(err).Str("transcript", in.AgentTranscriptPath).Msg("subagent transcript unreadable")
+		return "", nil
+	}
+	if ctx == 0 {
+		return "", nil
+	}
+	log.Info().Str("session", in.SessionID).Str("agent", in.AgentID).Str("type", in.AgentType).
+		Int("context", ctx).Msg(msgSubagent)
+	return "", nil
 }
 
 // runHook reads a hook payload, runs fn and writes Claude Code's hook JSON.

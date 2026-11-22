@@ -11,7 +11,7 @@ import (
 )
 
 // ours matches the hook commands Loci owns: its binary, quoted or not, then a hook subcommand.
-var ours = regexp.MustCompile(`loci[^/\s']*'? hook (post-tool-use|session-start)$`)
+var ours = regexp.MustCompile(`loci[^/\s']*'? hook (post-tool-use|session-start|subagent-stop)$`)
 
 // oursStatus matches Loci's own status line command, so it never wraps itself:
 // from the start, its binary, bare, by path or quoted, then the subcommand.
@@ -24,6 +24,7 @@ func settingsPath(repo string) string { return filepath.Join(repo, ".claude", "s
 var hookEvents = []struct{ event, sub, matcher string }{
 	{"PostToolUse", "post-tool-use", "Bash"}, // a branch only changes through a shell command
 	{"SessionStart", "session-start", ""},
+	{"SubagentStop", "subagent-stop", ""}, // the context a subagent kept out of the main session
 }
 
 // Install adds (or, with remove, removes) Loci's hooks and status line in the
