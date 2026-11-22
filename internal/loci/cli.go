@@ -107,7 +107,7 @@ func (c *InstallCmd) Run(e *env) error {
 	case c.Uninstall:
 		verb = "removed from"
 	}
-	_, err = fmt.Fprintln(e.stdout, "loci hooks", verb, path)
+	_, err = fmt.Fprintln(e.stdout, "loci hooks and status line", verb, path)
 	return err
 }
 

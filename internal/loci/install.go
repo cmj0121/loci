@@ -25,9 +25,10 @@ var hookEvents = []struct{ event, sub, matcher string }{
 	{"SessionStart", "session-start", ""},
 }
 
-// Install adds (or, with remove, removes) Loci's hooks in the repository's
-// local settings. It keeps every other key and hook, replaces an older Loci
-// entry, and reports whether the file changed.
+// Install adds (or, with remove, removes) Loci's hooks and status line in the
+// repository's local settings. It keeps every other key and hook, replaces an
+// older Loci entry, wraps (and on removal restores) a local status line it
+// finds, and reports whether the file changed.
 func Install(repo, exe string, remove bool) (path string, changed bool, err error) {
 	path = settingsPath(repo)
 	data := map[string]any{}
@@ -66,6 +67,7 @@ func Install(repo, exe string, remove bool) (path string, changed bool, err erro
 	} else {
 		data["hooks"] = hooks
 	}
+	setStatusLine(data, exe, remove)
 	if old == nil && remove {
 		return path, false, nil
 	}
@@ -81,6 +83,44 @@ func Install(repo, exe string, remove bool) (path string, changed bool, err erro
 		return path, false, err
 	}
 	return path, true, os.WriteFile(path, b, 0o644)
+}
+
+// thenFlag separates Loci's status line command from the one it wraps.
+const thenFlag = " statusline --then "
+
+// setStatusLine points the local statusLine at Loci, wrapping a non-Loci one
+// through --then, or with remove undoes that. Another tool's line is never removed.
+func setStatusLine(data map[string]any, exe string, remove bool) {
+	sl, _ := data["statusLine"].(map[string]any)
+	cmd, _ := sl["command"].(string)
+	mine := oursStatus.MatchString(cmd)
+	then := ""
+	switch {
+	case mine:
+		if i := strings.Index(cmd, thenFlag); i >= 0 {
+			then = shellUnquote(cmd[i+len(thenFlag):])
+		}
+	case cmd != "" && !remove:
+		then = cmd
+	}
+	next := map[string]any{"type": "command"}
+	switch {
+	case remove && !mine:
+		return
+	case remove && then == "":
+		delete(data, "statusLine")
+		return
+	case remove:
+		next["command"] = then
+	case then == "":
+		next["command"] = shellQuote(exe) + " statusline"
+	default:
+		next["command"] = shellQuote(exe) + thenFlag + shellQuote(then)
+	}
+	if p, ok := sl["padding"]; ok {
+		next["padding"] = p
+	}
+	data["statusLine"] = next
 }
 
 // dropOurs removes Loci's commands from a hook event's groups, and groups left empty.
@@ -112,12 +152,23 @@ func dropOurs(v any) []any {
 	return out
 }
 
-// shellQuote quotes s for the hook's shell command line when it needs it.
+// shellSafe matches words the shell reads literally, so they need no quotes.
+var shellSafe = regexp.MustCompile(`^[A-Za-z0-9_./:@%+=,-]+$`)
+
+// shellQuote quotes s for a shell command line unless it is a safe bare word.
 func shellQuote(s string) string {
-	if !strings.ContainsAny(s, " '\"\\$`") {
+	if shellSafe.MatchString(s) {
 		return s
 	}
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// shellUnquote inverts shellQuote.
+func shellUnquote(s string) string {
+	if len(s) < 2 || s[0] != '\'' || s[len(s)-1] != '\'' {
+		return s
+	}
+	return strings.ReplaceAll(s[1:len(s)-1], `'\''`, "'")
 }
 
 // previousStatus is the status line command Loci wraps when no --then was
