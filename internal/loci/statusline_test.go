@@ -47,15 +47,15 @@ func writeJSON(t *testing.T, path string, v any) {
 
 func TestStatuslineWrapsThen(t *testing.T) {
 	dir := statusRepo(t)
-	if out := statusline(t, dir, "--then", "echo base"); out != "base · loci working · 297k saved\n" {
+	if out := statusline(t, dir, "--then", "echo base"); out != "base · loci working · 297k/0 saved\n" {
 		t.Errorf("got %q", out)
 	}
-	if out := statusline(t, dir, "--then", "head -c 7"); out != `{"cwd": · loci working · 297k saved`+"\n" {
+	if out := statusline(t, dir, "--then", "head -c 7"); out != `{"cwd": · loci working · 297k/0 saved`+"\n" {
 		t.Errorf("stdin not passed on: got %q", out)
 	}
 	real, _ := filepath.EvalSymlinks(dir)
 	code, out, _ := run(t, `{"cwd":"/nonexistent","workspace":{"current_dir":"`+dir+`"}}`, "statusline", "--then", "pwd -P")
-	if code != 0 || out != real+" · loci working · 297k saved\n" {
+	if code != 0 || out != real+" · loci working · 297k/0 saved\n" {
 		t.Errorf("workspace.current_dir: exit %d got %q", code, out)
 	}
 }
@@ -66,12 +66,12 @@ func TestStatuslineRunsUserStatusLine(t *testing.T) {
 		map[string]any{"statusLine": map[string]any{"type": "command", "command": "'/opt/my loci/loci' statusline"}})
 	writeJSON(t, filepath.Join(os.Getenv("HOME"), ".claude", "settings.json"),
 		map[string]any{"statusLine": map[string]any{"type": "command", "command": "echo user"}})
-	if out := statusline(t, dir); out != "user · loci working · 297k saved\n" {
+	if out := statusline(t, dir); out != "user · loci working · 297k/0 saved\n" {
 		t.Errorf("got %q", out)
 	}
 	writeJSON(t, filepath.Join(dir, ".claude", "settings.json"),
 		map[string]any{"statusLine": map[string]any{"type": "command", "command": "echo project"}})
-	if out := statusline(t, dir); out != "project · loci working · 297k saved\n" {
+	if out := statusline(t, dir); out != "project · loci working · 297k/0 saved\n" {
 		t.Errorf("project status line: got %q", out)
 	}
 }
@@ -113,7 +113,7 @@ func TestStatuslineReadsCache(t *testing.T) {
 	}
 	c["cleared"] = 1_200_000
 	writeJSON(t, p, c)
-	if out := statusline(t, dir); out != "loci working · 1.2M saved\n" {
+	if out := statusline(t, dir); out != "loci working · 1.2M/0 saved\n" {
 		t.Errorf("unchanged logs: got %q", out)
 	}
 }
@@ -124,13 +124,13 @@ func TestStatuslineClearReady(t *testing.T) {
 	if err := saveState(gd, State{Branch: "feat/x", Pending: &Pending{From: "main", To: "feat/x", At: time.Now()}}); err != nil {
 		t.Fatal(err)
 	}
-	if out := statusline(t, dir); out != "loci working · 297k saved · /clear ready\n" {
+	if out := statusline(t, dir); out != "loci working · 297k/0 saved · /clear ready\n" {
 		t.Errorf("pending: got %q", out)
 	}
 	if err := saveState(gd, State{Branch: "feat/x"}); err != nil {
 		t.Fatal(err)
 	}
-	if out := statusline(t, dir); out != "loci working · 297k saved\n" {
+	if out := statusline(t, dir); out != "loci working · 297k/0 saved\n" {
 		t.Errorf("cleared: got %q", out)
 	}
 }
@@ -160,11 +160,11 @@ func TestStatuslineStalePendingNotReady(t *testing.T) {
 	if err := saveState(filepath.Join(dir, ".git"), State{Branch: "feat/x", Pending: &Pending{From: "main", To: "feat/x", At: at.Add(-time.Hour)}}); err != nil {
 		t.Fatal(err)
 	}
-	if out := statusline(t, dir); out != "loci working · 297k saved · /clear ready\n" {
+	if out := statusline(t, dir); out != "loci working · 297k/0 saved · /clear ready\n" {
 		t.Errorf("fresh: got %q", out)
 	}
 	now = func() time.Time { return at.Add(pendingTTL) }
-	if out := statusline(t, dir); out != "loci working · 297k saved\n" {
+	if out := statusline(t, dir); out != "loci working · 297k/0 saved\n" {
 		t.Errorf("older than 24h: got %q", out)
 	}
 }
@@ -193,11 +193,11 @@ func TestStatuslineMarksChildAndStopsRecursion(t *testing.T) {
 	dir := statusRepo(t)
 	t.Setenv("LOCI_STATUSLINE", "")
 	os.Unsetenv("LOCI_STATUSLINE")
-	if out := statusline(t, dir, "--then", "echo $LOCI_STATUSLINE"); out != "1 · loci working · 297k saved\n" {
+	if out := statusline(t, dir, "--then", "echo $LOCI_STATUSLINE"); out != "1 · loci working · 297k/0 saved\n" {
 		t.Errorf("child env: got %q", out)
 	}
 	t.Setenv("LOCI_STATUSLINE", "1")
-	if out := statusline(t, dir, "--then", "echo base"); out != "loci working · 297k saved\n" {
+	if out := statusline(t, dir, "--then", "echo base"); out != "loci working · 297k/0 saved\n" {
 		t.Errorf("nested run: got %q", out)
 	}
 }
@@ -236,7 +236,7 @@ func TestStatuslineCacheDoesNotFollowSymlink(t *testing.T) {
 	if err := os.Symlink(target, p); err != nil {
 		t.Fatal(err)
 	}
-	if out := statusline(t, dir); out != "loci working · 297k saved\n" {
+	if out := statusline(t, dir); out != "loci working · 297k/0 saved\n" {
 		t.Errorf("got %q", out)
 	}
 	if b, _ := os.ReadFile(target); string(b) != "keep" {
@@ -279,11 +279,28 @@ func TestStatuslineSkipsProjectOfAnotherRepo(t *testing.T) {
 	other := t.TempDir()
 	sh(t, other, "git", "init", "-q", "-b", "main")
 	stdin := `{"cwd":"` + dir + `","workspace":{"project_dir":"` + other + `"}}`
-	if code, out, _ := run(t, stdin, "statusline"); code != 0 || out != "user · loci working · 297k saved\n" {
+	if code, out, _ := run(t, stdin, "statusline"); code != 0 || out != "user · loci working · 297k/0 saved\n" {
 		t.Errorf("other project_dir: exit %d got %q", code, out)
 	}
 	stdin = `{"cwd":"` + dir + `","workspace":{"project_dir":"` + dir + `"}}`
-	if code, out, _ := run(t, stdin, "statusline"); code != 0 || out != "project · loci working · 297k saved\n" {
+	if code, out, _ := run(t, stdin, "statusline"); code != 0 || out != "project · loci working · 297k/0 saved\n" {
 		t.Errorf("same project_dir: exit %d got %q", code, out)
+	}
+}
+
+func TestStatuslineShowsMainAndSubagentSavings(t *testing.T) {
+	dir := statusRepo(t)
+	gd := filepath.Join(dir, ".git")
+	writeLog(t, gd,
+		`{"level":"info","context":297000,"chars":400,"time":"2026-11-20T10:01:00+08:00","message":"handoff"}`,
+		`{"level":"info","agent":"a1","type":"Explore","context":40000,"time":"2026-11-20T10:02:00+08:00","message":"subagent"}`,
+		`{"level":"info","agent":"a2","type":"Plan","context":1160000,"time":"2026-11-20T10:03:00+08:00","message":"subagent"}`)
+	if out := statusline(t, dir); out != "loci working · 297k/1.2M saved\n" {
+		t.Errorf("main and subagents: got %q", out)
+	}
+	writeLog(t, gd,
+		`{"level":"info","agent":"a1","type":"Explore","context":40000,"time":"2026-11-20T10:02:00+08:00","message":"subagent"}`)
+	if out := statusline(t, dir); out != "loci working · 0/40k saved\n" {
+		t.Errorf("subagents only: got %q", out)
 	}
 }

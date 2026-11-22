@@ -96,6 +96,7 @@ func runStatus(command, dir string, stdin []byte) string {
 type statusCache struct {
 	Key       string      `json:"key"`
 	Cleared   int         `json:"cleared"`
+	Delegated int         `json:"delegated"`
 	PendingAt []time.Time `json:"pendingAt"`
 	FailedAt  []time.Time `json:"failedAt"`
 }
@@ -120,14 +121,15 @@ func statusSegment(dir string) string {
 		if err != nil {
 			return ""
 		}
-		c = statusCache{Key: key, Cleared: s.Cleared, PendingAt: pendingSince(gitDirs), FailedAt: failuresSince(gitDirs, at.Add(-failureWindow))}
+		c = statusCache{Key: key, Cleared: s.Cleared, Delegated: s.Delegated, PendingAt: pendingSince(gitDirs), FailedAt: failuresSince(gitDirs, at.Add(-failureWindow))}
 		if b, err := json.Marshal(c); err == nil {
 			_ = writeAtomic(path, b)
 		}
 	}
 	seg := "loci working"
-	if c.Cleared > 0 {
-		seg += " · " + tokens(c.Cleared) + " saved"
+	if c.Cleared > 0 || c.Delegated > 0 {
+		// main/subagents: context the handoffs cleared / context subagents kept out
+		seg += " · " + tokens(c.Cleared) + "/" + tokens(c.Delegated) + " saved"
 	}
 	if recent(c.PendingAt, at, pendingTTL) > 0 {
 		seg += " · /clear ready"
