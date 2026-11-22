@@ -296,3 +296,27 @@ func TestHandoffNamesThePendingPreviousBranch(t *testing.T) {
 		t.Error("loci handoff consumed the pending handoff")
 	}
 }
+
+func TestPostToolUseIgnoresSubagents(t *testing.T) {
+	dir := newRepo(t)
+	tp := transcript(t, 250_000)
+	main := map[string]string{"session_id": "s1", "cwd": dir, "transcript_path": tp, "tool_name": "Bash"}
+	sub := map[string]string{"session_id": "s1", "cwd": dir, "transcript_path": tp, "tool_name": "Bash",
+		"agent_id": "a1", "agent_type": "general-purpose"}
+	sh(t, dir, "git", "switch", "-q", "-c", "feat/a")
+	hook(t, "post-tool-use", main)
+	sh(t, dir, "git", "switch", "-q", "-c", "feat/b")
+	if out := hook(t, "post-tool-use", sub); out != "" {
+		t.Fatalf("a subagent was told %q", additional(t, out))
+	}
+	if st, _ := loadState(filepath.Join(dir, ".git")); st.Branch != "feat/a" || st.Pending != nil {
+		t.Errorf("a subagent's call moved the state: %+v", st)
+	}
+	if ls := logLines(t, dir); len(ls) != 0 {
+		t.Errorf("a subagent's call was logged: %v", ls)
+	}
+	// The main session's next command judges the switch the subagent made.
+	if msg := additional(t, hook(t, "post-tool-use", main)); !strings.Contains(msg, "feat/a to feat/b") {
+		t.Errorf("main session missed the switch: %q", msg)
+	}
+}

@@ -18,6 +18,10 @@ type HookInput struct {
 	HookEventName  string `json:"hook_event_name"`
 	ToolName       string `json:"tool_name"`
 	Source         string `json:"source"` // SessionStart: startup, resume, clear, compact
+	// AgentID is set when the hook fires inside a subagent; TranscriptPath is
+	// still the main session's.
+	AgentID   string `json:"agent_id"`
+	AgentType string `json:"agent_type"`
 }
 
 type hookOutput struct {
@@ -57,6 +61,11 @@ var now = time.Now
 // a branch new to this session on a large context, asks the agent to suggest
 // /clear.
 func PostToolUse(in HookInput, w worktree, log zerolog.Logger) (string, error) {
+	if in.AgentID != "" {
+		// A subagent cannot /clear and its context is not the main session's.
+		// A branch it switched is judged at the main session's next command.
+		return "", nil
+	}
 	st, err := loadState(w.gitDir)
 	if err != nil {
 		return "", err
