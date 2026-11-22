@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // transcript writes a transcript whose last main-chain turn has ctx tokens of context.
@@ -170,8 +171,8 @@ func TestHooksNeverFail(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(dir, ".git", "loci", "state.json"), 0o755); err != nil {
 		t.Fatal(err) // a directory where the state file should be: every read fails
 	}
-	for _, stdin := range []string{"", "not json", `{"cwd":""}`, `{"cwd":"` + t.TempDir() + `"}`, `{"cwd":"` + dir + `"}`} {
-		for _, sub := range []string{"post-tool-use"} {
+	for _, stdin := range []string{"", "not json", `{"cwd":""}`, `{"cwd":"` + t.TempDir() + `"}`, `{"cwd":"` + dir + `"}`, `{"cwd":"` + dir + `","source":"clear"}`} {
+		for _, sub := range []string{"post-tool-use", "session-start"} {
 			code, out, errs := run(t, stdin, "hook", sub)
 			if code != 0 || out != "" || errs != "" {
 				t.Errorf("%s %q: exit %d out %q err %q", sub, stdin, code, out, errs)
@@ -218,5 +219,80 @@ func TestCorruptStateIsReset(t *testing.T) {
 	st, err := loadState(gd)
 	if err != nil || st.Branch != "" {
 		t.Errorf("corrupt state = %+v, %v", st, err)
+	}
+}
+
+// pendingRepo is a repository with a suggestion waiting on fix/gh-2-b.
+func pendingRepo(t *testing.T) string {
+	t.Helper()
+	dir := newRepo(t)
+	in := map[string]string{"session_id": "s1", "cwd": dir, "transcript_path": transcript(t, 250_000)}
+	sh(t, dir, "git", "switch", "-q", "-c", "feat/gh-1-a")
+	hook(t, "post-tool-use", in)
+	sh(t, dir, "git", "switch", "-q", "-c", "fix/gh-2-b")
+	commitFile(t, dir, "b.go", "package b", "fix(gh-2): b")
+	if additional(t, hook(t, "post-tool-use", in)) == "" {
+		t.Fatal("no suggestion")
+	}
+	return dir
+}
+
+func TestSessionStartInjectsTheHandoffOnce(t *testing.T) {
+	dir := pendingRepo(t)
+	md := additional(t, hook(t, "session-start", map[string]string{"session_id": "s2", "cwd": dir, "source": "clear"}))
+	for _, want := range []string{"# Loci handoff", "- branch: fix/gh-2-b", "- issue: gh-2", "- previous branch: feat/gh-1-a", "fix(gh-2): b"} {
+		if !strings.Contains(md, want) {
+			t.Errorf("handoff misses %q:\n%s", want, md)
+		}
+	}
+	if out := hook(t, "session-start", map[string]string{"session_id": "s3", "cwd": dir, "source": "clear"}); out != "" {
+		t.Errorf("second session got %q", out)
+	}
+	ls := logLines(t, dir)
+	last := ls[len(ls)-1]
+	if last["message"] != msgHandoff || last["context"] != 250000.0 || last["source"] != "clear" || last["chars"] != float64(len(md)) {
+		t.Errorf("log = %v", last)
+	}
+}
+
+func TestSessionStartIgnoresResumeAndCompact(t *testing.T) {
+	dir := pendingRepo(t)
+	for _, src := range []string{"resume", "compact", ""} {
+		if out := hook(t, "session-start", map[string]string{"cwd": dir, "source": src}); out != "" {
+			t.Errorf("source %q got %q", src, out)
+		}
+	}
+	if st, _ := loadState(filepath.Join(dir, ".git")); st.Pending == nil {
+		t.Error("the pending handoff was consumed")
+	}
+	if out := hook(t, "session-start", map[string]string{"cwd": dir, "source": "startup"}); out == "" {
+		t.Error("startup got nothing")
+	}
+}
+
+func TestSessionStartDropsAStaleHandoff(t *testing.T) {
+	dir := pendingRepo(t)
+	defer func(f func() time.Time) { now = f }(now)
+	at := time.Now()
+	now = func() time.Time { return at.Add(pendingTTL + time.Minute) }
+	if out := hook(t, "session-start", map[string]string{"cwd": dir, "source": "clear"}); out != "" {
+		t.Errorf("stale handoff injected: %q", out)
+	}
+	if st, _ := loadState(filepath.Join(dir, ".git")); st.Pending != nil {
+		t.Error("stale handoff kept")
+	}
+	if ls := logLines(t, dir); ls[len(ls)-1]["message"] != msgStale {
+		t.Errorf("log = %v", ls[len(ls)-1])
+	}
+}
+
+func TestHandoffNamesThePendingPreviousBranch(t *testing.T) {
+	dir := pendingRepo(t)
+	code, out, _ := run(t, "", "handoff", "-C", dir)
+	if code != 0 || !strings.Contains(out, "- previous branch: feat/gh-1-a") {
+		t.Errorf("exit %d:\n%s", code, out)
+	}
+	if st, _ := loadState(filepath.Join(dir, ".git")); st.Pending == nil {
+		t.Error("loci handoff consumed the pending handoff")
 	}
 }

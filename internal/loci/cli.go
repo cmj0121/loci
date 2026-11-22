@@ -46,7 +46,10 @@ func (PostToolUseCmd) Run(e *env) error {
 
 type SessionStartCmd struct{}
 
-func (SessionStartCmd) Run(e *env) error { return errNotImplemented }
+func (SessionStartCmd) Run(e *env) error {
+	runHook("SessionStart", SessionStart, e.stdin, e.stdout)
+	return nil
+}
 
 type HandoffCmd struct {
 	Dir    string `short:"C" default:"." help:"Repository directory."`
@@ -55,7 +58,13 @@ type HandoffCmd struct {
 }
 
 func (c *HandoffCmd) Run(e *env) error {
-	f, err := Collect(c.Dir, c.Base, "")
+	prev := "" // the branch a pending boundary left, when there is one
+	if w, err := locate(c.Dir); err == nil {
+		if st, err := loadState(w.gitDir); err == nil && st.Pending != nil {
+			prev = st.Pending.From
+		}
+	}
+	f, err := Collect(c.Dir, c.Base, prev)
 	if err != nil {
 		return err
 	}

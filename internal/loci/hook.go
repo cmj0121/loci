@@ -96,6 +96,37 @@ func PostToolUse(in HookInput, w worktree, log zerolog.Logger) (string, error) {
 		"git state of %s to the new session, so nothing from git is lost.", v.From, v.To, v.Context/1000, v.To), nil
 }
 
+// SessionStart hands a pending boundary over to a cleared or new session.
+func SessionStart(in HookInput, w worktree, log zerolog.Logger) (string, error) {
+	if in.Source != "clear" && in.Source != "startup" {
+		return "", nil // resume and compact keep their context: nothing to hand over
+	}
+	st, err := loadState(w.gitDir)
+	if err != nil || st.Pending == nil {
+		return "", err
+	}
+	p := st.Pending
+	st.Pending = nil
+	if w.branch != "" {
+		st.Branch = w.branch
+	}
+	if err := saveState(w.gitDir, st); err != nil {
+		return "", err
+	}
+	if age := now().Sub(p.At); age > pendingTTL {
+		log.Info().Str("session", in.SessionID).Str("to", p.To).Dur("age", age).Msg(msgStale)
+		return "", nil
+	}
+	f, err := Collect(in.Cwd, "", p.From)
+	if err != nil {
+		return "", err
+	}
+	md := f.Markdown()
+	log.Info().Str("session", in.SessionID).Str("source", in.Source).Str("from", p.From).Str("to", f.Branch).
+		Int("context", p.Context).Int("chars", len(md)).Msg(msgHandoff)
+	return md, nil
+}
+
 // runHook reads a hook payload, runs fn and writes Claude Code's hook JSON.
 // It never fails the agent: errors go to .git/loci/log and nothing is printed.
 func runHook(event string, fn hookFunc, stdin io.Reader, stdout io.Writer) {
