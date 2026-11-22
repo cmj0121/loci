@@ -26,7 +26,7 @@ func TestHelpListsEveryCommand(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("--help exit %d", code)
 	}
-	for _, c := range []string{"hook post-tool-use", "hook session-start", "handoff", "install", "stats", "replay"} {
+	for _, c := range []string{"hook post-tool-use", "hook session-start", "handoff", "install", "stats", "replay", "statusline"} {
 		if !strings.Contains(out, c) {
 			t.Errorf("--help misses %q:\n%s", c, out)
 		}

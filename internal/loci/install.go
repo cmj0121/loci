@@ -13,6 +13,10 @@ import (
 // ours matches the hook commands Loci owns: its binary, quoted or not, then a hook subcommand.
 var ours = regexp.MustCompile(`loci[^/\s']*'? hook (post-tool-use|session-start)$`)
 
+// oursStatus matches Loci's own status line command, so it never wraps itself:
+// from the start, its binary, bare, by path or quoted, then the subcommand.
+var oursStatus = regexp.MustCompile(`^(?:'(?:[^']|'\\'')*/|'|[A-Za-z0-9_./:@%+=,-]*/)?loci[^/\s']*'? statusline( |$)`)
+
 // settingsPath is the repository-local Claude Code settings file, not shared with the team.
 func settingsPath(repo string) string { return filepath.Join(repo, ".claude", "settings.local.json") }
 
@@ -22,9 +26,10 @@ var hookEvents = []struct{ event, sub, matcher string }{
 	{"SessionStart", "session-start", ""},
 }
 
-// Install adds (or, with remove, removes) Loci's hooks in the repository's
-// local settings. It keeps every other key and hook, replaces an older Loci
-// entry, and reports whether the file changed.
+// Install adds (or, with remove, removes) Loci's hooks and status line in the
+// repository's local settings. It keeps every other key and hook, replaces an
+// older Loci entry, wraps (and on removal restores) a local status line it
+// finds, and reports whether the file changed.
 func Install(repo, exe string, remove bool) (path string, changed bool, err error) {
 	path = settingsPath(repo)
 	data := map[string]any{}
@@ -63,6 +68,7 @@ func Install(repo, exe string, remove bool) (path string, changed bool, err erro
 	} else {
 		data["hooks"] = hooks
 	}
+	setStatusLine(data, exe, remove)
 	if old == nil && remove {
 		return path, false, nil
 	}
@@ -78,6 +84,44 @@ func Install(repo, exe string, remove bool) (path string, changed bool, err erro
 		return path, false, err
 	}
 	return path, true, os.WriteFile(path, b, 0o644)
+}
+
+// thenFlag separates Loci's status line command from the one it wraps.
+const thenFlag = " statusline --then "
+
+// setStatusLine points the local statusLine at Loci, wrapping a non-Loci one
+// through --then, or with remove undoes that. Another tool's line is never removed.
+func setStatusLine(data map[string]any, exe string, remove bool) {
+	sl, _ := data["statusLine"].(map[string]any)
+	cmd, _ := sl["command"].(string)
+	mine := oursStatus.MatchString(cmd)
+	then := ""
+	switch {
+	case mine:
+		if i := strings.Index(cmd, thenFlag); i >= 0 {
+			then = shellUnquote(cmd[i+len(thenFlag):])
+		}
+	case cmd != "" && !remove:
+		then = cmd
+	}
+	next := map[string]any{"type": "command"}
+	switch {
+	case remove && !mine:
+		return
+	case remove && then == "":
+		delete(data, "statusLine")
+		return
+	case remove:
+		next["command"] = then
+	case then == "":
+		next["command"] = shellQuote(exe) + " statusline"
+	default:
+		next["command"] = shellQuote(exe) + thenFlag + shellQuote(then)
+	}
+	if p, ok := sl["padding"]; ok {
+		next["padding"] = p
+	}
+	data["statusLine"] = next
 }
 
 // dropOurs removes Loci's commands from a hook event's groups, and groups left empty.
@@ -109,10 +153,68 @@ func dropOurs(v any) []any {
 	return out
 }
 
-// shellQuote quotes s for the hook's shell command line when it needs it.
+// shellSafe matches words the shell reads literally, so they need no quotes.
+var shellSafe = regexp.MustCompile(`^[A-Za-z0-9_./:@%+=,-]+$`)
+
+// shellQuote quotes s for a shell command line unless it is a safe bare word.
 func shellQuote(s string) string {
-	if !strings.ContainsAny(s, " '\"\\$`") {
+	if shellSafe.MatchString(s) {
 		return s
 	}
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// shellUnquote inverts shellQuote.
+func shellUnquote(s string) string {
+	if len(s) < 2 || s[0] != '\'' || s[len(s)-1] != '\'' {
+		return s
+	}
+	return strings.ReplaceAll(s[1:len(s)-1], `'\''`, "'")
+}
+
+// previousStatus is the status line command Loci wraps when no --then was
+// recorded: the project's, else the user's, skipping one of Loci's own. The
+// project's is read only where this machine installed Loci's status line in an
+// untracked local file, so a nested or cloned repository's command never runs.
+func previousStatus(top string) string {
+	var paths []string
+	if top != "" && localStatusIsOurs(top) {
+		paths = append(paths, filepath.Join(top, ".claude", "settings.json"))
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		paths = append(paths, filepath.Join(home, ".claude", "settings.json"))
+	}
+	for _, p := range paths {
+		if c := statusCommand(p); c != "" && !oursStatus.MatchString(c) {
+			return c
+		}
+	}
+	return ""
+}
+
+// localStatusIsOurs reports whether top's local settings hold Loci's status
+// line and are not committed, so they were written here rather than cloned.
+func localStatusIsOurs(top string) bool {
+	if !oursStatus.MatchString(statusCommand(settingsPath(top))) {
+		return false
+	}
+	_, err := git(top, "ls-files", "--error-unmatch", filepath.Join(".claude", "settings.local.json"))
+	return err != nil
+}
+
+// statusCommand is the statusLine command in a settings file, or "".
+func statusCommand(path string) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	var s struct {
+		StatusLine struct {
+			Command string `json:"command"`
+		} `json:"statusLine"`
+	}
+	if json.Unmarshal(b, &s) != nil {
+		return ""
+	}
+	return s.StatusLine.Command
 }

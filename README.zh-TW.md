@@ -74,8 +74,16 @@ make build                 # 產生 bin/loci
 bin/loci install -C ~/src/my-repo
 ```
 
-`loci install` 會在 repository 的 `.claude/settings.local.json` 加上兩個 hook，這個檔案不會分享給
-團隊。其他設定都會保留。`loci install --uninstall` 會把它們移除。
+`loci install` 會在 repository 的 `.claude/settings.local.json` 加上兩個 hook 和 status line，這個
+檔案不會分享給團隊。其他設定都會保留，你原本的 status line 會先執行，行尾再接上 Loci 的狀態：
+
+```text
+<你的 status line> · loci working · 1.2M saved · /clear ready · 1 failed
+```
+
+`saved` 是 handoff 清掉的 context token 數，是下限。`/clear ready` 在有 handoff 等待時出現，
+`failed` 是最近 24 小時內 hook 出錯的次數。`loci install --uninstall` 會移除 hook，並還原你的
+status line。
 
 ## 指令
 
@@ -84,7 +92,8 @@ bin/loci install -C ~/src/my-repo
 | `loci handoff [--format md\|json]` | 印出目前 branch 的 git handoff，任何 agent 都能用  |
 | `loci stats [--since 7d]`          | 統計切換、建議、handoff 的次數，以及採用率         |
 | `loci replay`                      | 用規則重放這個 repository 過去的 session，估算節省 |
-| `loci install [--uninstall]`       | 加上或移除 Claude Code 的 hook                     |
+| `loci statusline [--then CMD]`     | status line：先執行 `CMD`，再接上 Loci 的狀態      |
+| `loci install [--uninstall]`       | 加上或移除 Claude Code 的 hook 和 status line      |
 | `loci hook post-tool-use`          | PostToolUse hook（JSON 從 stdin 輸入）             |
 | `loci hook session-start`          | SessionStart hook（JSON 從 stdin 輸入）            |
 
