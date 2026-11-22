@@ -25,12 +25,13 @@ type env struct {
 
 // CLI is the whole command tree.
 type CLI struct {
-	Hook    HookCmd          `cmd:"" help:"Agent hook entry points; hook JSON on stdin."`
-	Handoff HandoffCmd       `cmd:"" help:"Print the git handoff for the current branch."`
-	Install InstallCmd       `cmd:"" help:"Add Loci's hooks to .claude/settings.local.json."`
-	Stats   StatsCmd         `cmd:"" help:"Summarise what the hooks did in this repository."`
-	Replay  ReplayCmd        `cmd:"" help:"Replay past agent sessions under Loci's rule and estimate the saving."`
-	Version kong.VersionFlag `help:"Print the version."`
+	Hook       HookCmd          `cmd:"" help:"Agent hook entry points; hook JSON on stdin."`
+	Handoff    HandoffCmd       `cmd:"" help:"Print the git handoff for the current branch."`
+	Install    InstallCmd       `cmd:"" help:"Add Loci's hooks to .claude/settings.local.json."`
+	Stats      StatsCmd         `cmd:"" help:"Summarise what the hooks did in this repository."`
+	Replay     ReplayCmd        `cmd:"" help:"Replay past agent sessions under Loci's rule and estimate the saving."`
+	Statusline StatuslineCmd    `cmd:"" help:"Claude Code status line: Loci's state, after the status line it wraps."`
+	Version    kong.VersionFlag `help:"Print the version."`
 }
 
 // HookCmd groups the Claude Code hooks. They always exit 0 and print nothing on error.

@@ -13,6 +13,9 @@ import (
 // ours matches the hook commands Loci owns: its binary, quoted or not, then a hook subcommand.
 var ours = regexp.MustCompile(`loci[^/\s']*'? hook (post-tool-use|session-start)$`)
 
+// oursStatus matches Loci's own status line command, so it never wraps itself.
+var oursStatus = regexp.MustCompile(`loci[^/\s']*'? statusline( |$)`)
+
 // settingsPath is the repository-local Claude Code settings file, not shared with the team.
 func settingsPath(repo string) string { return filepath.Join(repo, ".claude", "settings.local.json") }
 
@@ -115,4 +118,34 @@ func shellQuote(s string) string {
 		return s
 	}
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// previousStatus is the status line command Loci wraps when no --then was
+// recorded: the project's, else the user's, skipping one of Loci's own.
+func previousStatus(top string) string {
+	var paths []string
+	if top != "" {
+		paths = append(paths, filepath.Join(top, ".claude", "settings.json"))
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		paths = append(paths, filepath.Join(home, ".claude", "settings.json"))
+	}
+	for _, p := range paths {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		var s struct {
+			StatusLine struct {
+				Command string `json:"command"`
+			} `json:"statusLine"`
+		}
+		if json.Unmarshal(b, &s) != nil {
+			continue
+		}
+		if c := s.StatusLine.Command; c != "" && !oursStatus.MatchString(c) {
+			return c
+		}
+	}
+	return ""
 }
