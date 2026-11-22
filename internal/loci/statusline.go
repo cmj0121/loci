@@ -10,11 +10,16 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
 // statusTimeout bounds the wrapped status line command, which Claude Code waits on.
 const statusTimeout = 2 * time.Second
+
+// statusEnv marks a status line run, so a wrapped command that calls Loci again
+// prints only the segment instead of recursing.
+const statusEnv = "LOCI_STATUSLINE"
 
 // failureWindow is how long a hook failure stays in the status line.
 const failureWindow = 24 * time.Hour
@@ -31,6 +36,7 @@ func (c *StatuslineCmd) Run(e *env) error {
 		Cwd       string `json:"cwd"`
 		Workspace struct {
 			CurrentDir string `json:"current_dir"`
+			ProjectDir string `json:"project_dir"`
 		} `json:"workspace"`
 	}
 	_ = json.Unmarshal(in, &p)
@@ -42,8 +48,16 @@ func (c *StatuslineCmd) Run(e *env) error {
 		dir = "."
 	}
 	cmd := c.Then
-	if cmd == "" || oursStatus.MatchString(cmd) {
+	switch {
+	case os.Getenv(statusEnv) != "":
+		cmd = ""
+	case cmd == "" || oursStatus.MatchString(cmd):
 		top, _ := git(dir, "rev-parse", "--show-toplevel")
+		if pd := p.Workspace.ProjectDir; pd != "" {
+			if ptop, _ := git(pd, "rev-parse", "--show-toplevel"); ptop != top {
+				top = "" // the session's project is another repository: trust only the user's
+			}
+		}
 		cmd = previousStatus(top)
 	}
 	var parts []string
@@ -66,6 +80,10 @@ func runStatus(command, dir string, stdin []byte) string {
 	cmd := exec.CommandContext(ctx, "sh", "-c", command)
 	cmd.Dir = dir
 	cmd.Stdin = bytes.NewReader(stdin)
+	cmd.Env = append(os.Environ(), statusEnv+"=1")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// On timeout kill the whole group, not just sh, so no grandchild outlives it.
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
 	cmd.WaitDelay = 100 * time.Millisecond // a background child must not hold the pipe open
 	out, err := cmd.Output()
 	if err != nil {
@@ -104,7 +122,7 @@ func statusSegment(dir string) string {
 		}
 		c = statusCache{Key: key, Cleared: s.Cleared, PendingAt: pendingSince(gitDirs), FailedAt: failuresSince(gitDirs, at.Add(-failureWindow))}
 		if b, err := json.Marshal(c); err == nil {
-			_ = os.WriteFile(path, b, 0o644)
+			_ = writeAtomic(path, b)
 		}
 	}
 	seg := "loci working"
@@ -118,6 +136,29 @@ func statusSegment(dir string) string {
 		seg += fmt.Sprintf(" · %d failed", failed)
 	}
 	return seg
+}
+
+// writeAtomic replaces path through a temporary file in its directory, so a
+// symlink at path is replaced rather than followed.
+func writeAtomic(path string, b []byte) error {
+	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*")
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(b)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Chmod(f.Name(), 0o644)
+	}
+	if err == nil {
+		err = os.Rename(f.Name(), path)
+	}
+	if err != nil {
+		_ = os.Remove(f.Name())
+	}
+	return err
 }
 
 // recent counts the times no older than d at now, so a cached entry expires by itself.

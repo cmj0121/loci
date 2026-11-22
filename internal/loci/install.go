@@ -13,8 +13,9 @@ import (
 // ours matches the hook commands Loci owns: its binary, quoted or not, then a hook subcommand.
 var ours = regexp.MustCompile(`loci[^/\s']*'? hook (post-tool-use|session-start)$`)
 
-// oursStatus matches Loci's own status line command, so it never wraps itself.
-var oursStatus = regexp.MustCompile(`loci[^/\s']*'? statusline( |$)`)
+// oursStatus matches Loci's own status line command, so it never wraps itself:
+// from the start, its binary, bare, by path or quoted, then the subcommand.
+var oursStatus = regexp.MustCompile(`^(?:'(?:[^']|'\\'')*/|'|[A-Za-z0-9_./:@%+=,-]*/)?loci[^/\s']*'? statusline( |$)`)
 
 // settingsPath is the repository-local Claude Code settings file, not shared with the team.
 func settingsPath(repo string) string { return filepath.Join(repo, ".claude", "settings.local.json") }
@@ -172,31 +173,48 @@ func shellUnquote(s string) string {
 }
 
 // previousStatus is the status line command Loci wraps when no --then was
-// recorded: the project's, else the user's, skipping one of Loci's own.
+// recorded: the project's, else the user's, skipping one of Loci's own. The
+// project's is read only where this machine installed Loci's status line in an
+// untracked local file, so a nested or cloned repository's command never runs.
 func previousStatus(top string) string {
 	var paths []string
-	if top != "" {
+	if top != "" && localStatusIsOurs(top) {
 		paths = append(paths, filepath.Join(top, ".claude", "settings.json"))
 	}
 	if home, err := os.UserHomeDir(); err == nil {
 		paths = append(paths, filepath.Join(home, ".claude", "settings.json"))
 	}
 	for _, p := range paths {
-		b, err := os.ReadFile(p)
-		if err != nil {
-			continue
-		}
-		var s struct {
-			StatusLine struct {
-				Command string `json:"command"`
-			} `json:"statusLine"`
-		}
-		if json.Unmarshal(b, &s) != nil {
-			continue
-		}
-		if c := s.StatusLine.Command; c != "" && !oursStatus.MatchString(c) {
+		if c := statusCommand(p); c != "" && !oursStatus.MatchString(c) {
 			return c
 		}
 	}
 	return ""
+}
+
+// localStatusIsOurs reports whether top's local settings hold Loci's status
+// line and are not committed, so they were written here rather than cloned.
+func localStatusIsOurs(top string) bool {
+	if !oursStatus.MatchString(statusCommand(settingsPath(top))) {
+		return false
+	}
+	_, err := git(top, "ls-files", "--error-unmatch", filepath.Join(".claude", "settings.local.json"))
+	return err != nil
+}
+
+// statusCommand is the statusLine command in a settings file, or "".
+func statusCommand(path string) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	var s struct {
+		StatusLine struct {
+			Command string `json:"command"`
+		} `json:"statusLine"`
+	}
+	if json.Unmarshal(b, &s) != nil {
+		return ""
+	}
+	return s.StatusLine.Command
 }

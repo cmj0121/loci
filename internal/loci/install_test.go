@@ -220,3 +220,39 @@ func TestShellUnquoteInvertsShellQuote(t *testing.T) {
 		}
 	}
 }
+
+func TestOursStatusAnchored(t *testing.T) {
+	for c, want := range map[string]bool{
+		"loci statusline": true,
+		"/usr/local/bin/loci statusline --then 'x'": true,
+		"'/opt/my loci/loci' statusline":            true,
+		"'loci' statusline":                         true,
+		"/tmp/x/loci.test statusline":               true,
+		"x; loci statusline":                        false,
+		"echo loci statusline":                      false,
+		"my-status; /usr/local/bin/loci statusline": false,
+		"x;/usr/local/bin/loci statusline":          false,
+		"/home/loci/bin/other statusline":           false,
+		"/usr/local/bin/loci statuslinex":           false,
+	} {
+		if got := oursStatus.MatchString(c); got != want {
+			t.Errorf("oursStatus(%q) = %v", c, got)
+		}
+	}
+}
+
+func TestOursStatusMatchesShellQuotedExe(t *testing.T) {
+	for _, exe := range []string{
+		"/usr/local/bin/loci",
+		"/opt/my tools/loci",
+		"/home/使用者/bin/loci",
+		"/a/it's here/loci",
+		"/tmp/x/loci.test",
+	} {
+		for _, c := range []string{shellQuote(exe) + " statusline", shellQuote(exe) + thenFlag + shellQuote("echo x")} {
+			if !oursStatus.MatchString(c) {
+				t.Errorf("oursStatus(%q) = false", c)
+			}
+		}
+	}
+}
