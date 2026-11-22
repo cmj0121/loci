@@ -9,7 +9,7 @@ import (
 var t0 = time.Date(2026, 11, 22, 10, 0, 0, 0, time.UTC)
 
 // step observes branch br in session s with the given context.
-func step(st *State, s, br string, ctx int) Verdict {
+func see(st *State, s, br string, ctx int) Verdict {
 	return observe(st, s, br, t0, defaultConfig, func() int { return ctx })
 }
 
@@ -28,7 +28,7 @@ func TestObserveSequence(t *testing.T) {
 		{"s1", "feat/gh-3-c", 300_000, ReasonSuggest},
 		{"s2", "feat/gh-1-a", 300_000, ReasonSuggest}, // a new session forgets what it visited
 	} {
-		v := step(&st, c.session, c.branch, c.ctx)
+		v := see(&st, c.session, c.branch, c.ctx)
 		if v.Reason != c.want {
 			t.Fatalf("step %d %s: reason %q, want %q", i, c.branch, v.Reason, c.want)
 		}
@@ -57,8 +57,8 @@ func TestObserveReadsNothingUnlessItMust(t *testing.T) {
 
 func TestObserveReplacesAnUnusedSuggestion(t *testing.T) {
 	st := State{Branch: "feat/a", Session: "s"}
-	step(&st, "s", "feat/b", 200_000)
-	v := step(&st, "s", "feat/c", 250_000)
+	see(&st, "s", "feat/b", 200_000)
+	v := see(&st, "s", "feat/c", 250_000)
 	if v.Reason != ReasonSuggest || v.Replaced == nil || v.Replaced.To != "feat/b" {
 		t.Fatalf("verdict %+v", v)
 	}
@@ -69,7 +69,7 @@ func TestObserveReplacesAnUnusedSuggestion(t *testing.T) {
 
 func TestObserveThresholdIsInclusive(t *testing.T) {
 	st := State{Branch: "feat/a"}
-	if v := step(&st, "", "feat/b", DefaultThreshold); v.Reason != ReasonSuggest {
+	if v := see(&st, "", "feat/b", DefaultThreshold); v.Reason != ReasonSuggest {
 		t.Errorf("at the threshold: %q", v.Reason)
 	}
 }

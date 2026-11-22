@@ -17,8 +17,6 @@ import (
 // Version is set at build time with -ldflags "-X github.com/cmj0121/loci/internal/loci.Version=…".
 var Version = "0.0.0-dev"
 
-var errNotImplemented = errors.New("not implemented yet")
-
 // env carries the process streams into command Run methods, so tests can swap them.
 type env struct {
 	stdin          io.Reader
@@ -136,11 +134,45 @@ func (c *StatsCmd) Run(e *env) error {
 }
 
 type ReplayCmd struct {
-	Dir  string `short:"C" default:"." help:"Repository whose agent sessions are replayed."`
-	JSON bool   `name:"json" help:"Print JSON instead of a table."`
+	Dir           string   `short:"C" default:"." help:"Repository whose agent sessions are replayed."`
+	Projects      []string `help:"Claude Code project directories (default: those of the repository under ~/.claude/projects)."`
+	Threshold     int      `help:"Context tokens at which a switch is a handoff (default: loci.threshold or 100000)."`
+	HandoffTokens int      `default:"300" help:"Tokens of each injected handoff."`
+	Top           int      `default:"10" help:"How many of the largest suggestions to list."`
+	JSON          bool     `name:"json" help:"Print JSON instead of a table."`
 }
 
-func (c *ReplayCmd) Run(e *env) error { return errNotImplemented }
+func (c *ReplayCmd) Run(e *env) error {
+	top, err := git(c.Dir, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return err
+	}
+	cfg := loadConfig(top)
+	if c.Threshold > 0 {
+		cfg.Threshold = c.Threshold
+	}
+	projects := c.Projects
+	if len(projects) == 0 {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return err
+		}
+		if projects = ProjectDirs(filepath.Join(home, ".claude", "projects"), top); len(projects) == 0 {
+			return fmt.Errorf("no Claude Code sessions found for %s; pass --projects", top)
+		}
+	}
+	res, err := Replay(ReplayOptions{Projects: projects, Repo: top, Config: cfg, HandoffTokens: c.HandoffTokens})
+	if err != nil {
+		return err
+	}
+	if !c.JSON {
+		_, err = fmt.Fprint(e.stdout, res.Table(c.Top))
+		return err
+	}
+	enc := json.NewEncoder(e.stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(res)
+}
 
 // exit carries kong's exit code (from --help, --version) out of Parse.
 type exit int
