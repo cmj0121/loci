@@ -1,0 +1,118 @@
+package loci
+
+import (
+	"encoding/json"
+	"errors"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+)
+
+// ours matches the hook commands Loci owns: its binary, quoted or not, then a hook subcommand.
+var ours = regexp.MustCompile(`loci[^/\s']*'? hook (post-tool-use|session-start)$`)
+
+// settingsPath is the repository-local Claude Code settings file, not shared with the team.
+func settingsPath(repo string) string { return filepath.Join(repo, ".claude", "settings.local.json") }
+
+// hookEvents are the Claude Code events Loci hooks, with its subcommand and matcher.
+var hookEvents = []struct{ event, sub, matcher string }{
+	{"PostToolUse", "post-tool-use", "Bash"}, // a branch only changes through a shell command
+	{"SessionStart", "session-start", ""},
+}
+
+// Install adds (or, with remove, removes) Loci's hooks in the repository's
+// local settings. It keeps every other key and hook, replaces an older Loci
+// entry, and reports whether the file changed.
+func Install(repo, exe string, remove bool) (path string, changed bool, err error) {
+	path = settingsPath(repo)
+	data := map[string]any{}
+	old, err := os.ReadFile(path)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		old = nil
+	case err != nil:
+		return path, false, err
+	default:
+		if err := json.Unmarshal(old, &data); err != nil {
+			return path, false, err
+		}
+	}
+	hooks, _ := data["hooks"].(map[string]any)
+	if hooks == nil {
+		hooks = map[string]any{}
+	}
+	for _, h := range hookEvents {
+		groups := dropOurs(hooks[h.event])
+		if !remove {
+			g := map[string]any{"hooks": []any{map[string]any{"type": "command", "command": shellQuote(exe) + " hook " + h.sub}}}
+			if h.matcher != "" {
+				g["matcher"] = h.matcher
+			}
+			groups = append(groups, g)
+		}
+		if len(groups) == 0 {
+			delete(hooks, h.event)
+		} else {
+			hooks[h.event] = groups
+		}
+	}
+	if len(hooks) == 0 {
+		delete(data, "hooks")
+	} else {
+		data["hooks"] = hooks
+	}
+	if old == nil && remove {
+		return path, false, nil
+	}
+	b, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return path, false, err
+	}
+	b = append(b, '\n')
+	if string(old) == string(b) {
+		return path, false, nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return path, false, err
+	}
+	return path, true, os.WriteFile(path, b, 0o644)
+}
+
+// dropOurs removes Loci's commands from a hook event's groups, and groups left empty.
+func dropOurs(v any) []any {
+	groups, _ := v.([]any)
+	var out []any
+	for _, g := range groups {
+		gm, ok := g.(map[string]any)
+		if !ok {
+			out = append(out, g)
+			continue
+		}
+		hs, _ := gm["hooks"].([]any)
+		var keep []any
+		for _, h := range hs {
+			if hm, ok := h.(map[string]any); ok {
+				if c, _ := hm["command"].(string); ours.MatchString(c) {
+					continue
+				}
+			}
+			keep = append(keep, h)
+		}
+		if len(keep) == 0 {
+			continue
+		}
+		gm["hooks"] = keep
+		out = append(out, gm)
+	}
+	return out
+}
+
+// shellQuote quotes s for the hook's shell command line when it needs it.
+func shellQuote(s string) string {
+	if !strings.ContainsAny(s, " '\"\\$`") {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}

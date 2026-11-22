@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 
 	"github.com/alecthomas/kong"
 )
@@ -81,7 +83,32 @@ type InstallCmd struct {
 	Uninstall bool   `help:"Remove Loci's hooks instead."`
 }
 
-func (c *InstallCmd) Run(e *env) error { return errNotImplemented }
+func (c *InstallCmd) Run(e *env) error {
+	top, err := git(c.Dir, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return err
+	}
+	exe, err := os.Executable()
+	if err == nil {
+		exe, err = filepath.EvalSymlinks(exe)
+	}
+	if err != nil {
+		return err
+	}
+	path, changed, err := Install(top, exe, c.Uninstall)
+	if err != nil {
+		return err
+	}
+	verb := "installed in"
+	switch {
+	case !changed:
+		verb = "unchanged:"
+	case c.Uninstall:
+		verb = "removed from"
+	}
+	_, err = fmt.Fprintln(e.stdout, "loci hooks", verb, path)
+	return err
+}
 
 type StatsCmd struct {
 	Dir  string `short:"C" default:"." help:"Repository directory."`
