@@ -51,7 +51,18 @@ type HandoffCmd struct {
 	Format string `enum:"md,json" default:"md" help:"Output format: md or json."`
 }
 
-func (c *HandoffCmd) Run(e *env) error { return errNotImplemented }
+func (c *HandoffCmd) Run(e *env) error {
+	f, err := Collect(c.Dir, c.Base, "")
+	if err != nil {
+		return err
+	}
+	out := f.Markdown()
+	if c.Format == "json" {
+		out = f.JSON()
+	}
+	_, err = fmt.Fprint(e.stdout, out)
+	return err
+}
 
 type InstallCmd struct {
 	Dir       string `short:"C" default:"." help:"Repository directory."`
