@@ -1,0 +1,101 @@
+package loci
+
+import (
+	"fmt"
+	"testing"
+	"time"
+)
+
+var t0 = time.Date(2026, 11, 22, 10, 0, 0, 0, time.UTC)
+
+// step observes branch br in session s with the given context.
+func step(st *State, s, br string, ctx int) Verdict {
+	return observe(st, s, br, t0, defaultConfig, func() int { return ctx })
+}
+
+func TestObserveSequence(t *testing.T) {
+	var st State
+	for i, c := range []struct {
+		session, branch string
+		ctx             int
+		want            string
+	}{
+		{"s1", "feat/gh-1-a", 300_000, ReasonFirst},
+		{"s1", "feat/gh-1-a", 300_000, ReasonSame},
+		{"s1", "fix/gh-2-b", 50_000, ReasonSmall},
+		{"s1", "main", 300_000, ReasonLongLived},
+		{"s1", "feat/gh-1-a", 300_000, ReasonRevisit},
+		{"s1", "feat/gh-3-c", 300_000, ReasonSuggest},
+		{"s2", "feat/gh-1-a", 300_000, ReasonSuggest}, // a new session forgets what it visited
+	} {
+		v := step(&st, c.session, c.branch, c.ctx)
+		if v.Reason != c.want {
+			t.Fatalf("step %d %s: reason %q, want %q", i, c.branch, v.Reason, c.want)
+		}
+	}
+	if st.Pending == nil || st.Pending.From != "feat/gh-3-c" || st.Pending.To != "feat/gh-1-a" {
+		t.Errorf("pending = %+v", st.Pending)
+	}
+}
+
+func TestObserveReadsNothingUnlessItMust(t *testing.T) {
+	st := State{Branch: "feat/a", Session: "s", Visited: []string{"feat/b"}}
+	calls := 0
+	cfg := func() Config { calls++; return defaultConfig() }
+	ctx := func() int { calls++; return 1 << 20 }
+	for _, br := range []string{"feat/a", "", "feat/b"} { // same, detached, revisit
+		observe(&st, "s", br, t0, cfg, ctx)
+	}
+	if calls != 0 {
+		t.Errorf("config or context read %d times", calls)
+	}
+	observe(&st, "s", "main", t0, cfg, ctx)
+	if calls != 1 {
+		t.Errorf("a long-lived switch read %d things, want only the config", calls)
+	}
+}
+
+func TestObserveReplacesAnUnusedSuggestion(t *testing.T) {
+	st := State{Branch: "feat/a", Session: "s"}
+	step(&st, "s", "feat/b", 200_000)
+	v := step(&st, "s", "feat/c", 250_000)
+	if v.Reason != ReasonSuggest || v.Replaced == nil || v.Replaced.To != "feat/b" {
+		t.Fatalf("verdict %+v", v)
+	}
+	if st.Pending.To != "feat/c" || st.Pending.Context != 250_000 || !st.Pending.At.Equal(t0) {
+		t.Errorf("pending = %+v", st.Pending)
+	}
+}
+
+func TestObserveThresholdIsInclusive(t *testing.T) {
+	st := State{Branch: "feat/a"}
+	if v := step(&st, "", "feat/b", DefaultThreshold); v.Reason != ReasonSuggest {
+		t.Errorf("at the threshold: %q", v.Reason)
+	}
+}
+
+func TestLongLived(t *testing.T) {
+	c := defaultConfig()
+	c.Skip = append(c.Skip, "hotfix/*")
+	for br, want := range map[string]bool{
+		"main": true, "release/1.2": true, "sova-production": true, "hotfix/x": true,
+		"feat/main-menu": false, "fix/release-notes": false,
+	} {
+		if got := c.longLived(br); got != want {
+			t.Errorf("longLived(%q) = %v", br, got)
+		}
+	}
+}
+
+func TestRememberKeepsOrderAndBound(t *testing.T) {
+	v := remember([]string{"a", "b"}, "a")
+	if fmt.Sprint(v) != "[b a]" {
+		t.Errorf("remember = %v", v)
+	}
+	for i := range maxVisited + 10 {
+		v = remember(v, fmt.Sprint(i))
+	}
+	if len(v) != maxVisited || v[len(v)-1] != fmt.Sprint(maxVisited+9) {
+		t.Errorf("len %d last %s", len(v), v[len(v)-1])
+	}
+}

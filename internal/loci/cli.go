@@ -39,7 +39,10 @@ type HookCmd struct {
 
 type PostToolUseCmd struct{}
 
-func (PostToolUseCmd) Run(e *env) error { return errNotImplemented }
+func (PostToolUseCmd) Run(e *env) error {
+	runHook("PostToolUse", PostToolUse, e.stdin, e.stdout)
+	return nil
+}
 
 type SessionStartCmd struct{}
 
