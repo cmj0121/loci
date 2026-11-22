@@ -75,8 +75,17 @@ make build                 # writes bin/loci
 bin/loci install -C ~/src/my-repo
 ```
 
-`loci install` adds two hooks to the repository's `.claude/settings.local.json`, a file that is
-not shared with the team. It keeps your other settings. `loci install --uninstall` removes them.
+`loci install` adds two hooks and a status line to the repository's `.claude/settings.local.json`,
+a file that is not shared with the team. It keeps your other settings, and runs your own status
+line first, so the line ends in Loci's state:
+
+```text
+<your status line> · loci working · 1.2M saved · /clear ready · 1 failed
+```
+
+`saved` is the context tokens the handoffs cleared, a floor. `/clear ready` shows while a handoff
+waits, and `failed` counts hook errors in the last 24 hours. `loci install --uninstall` removes the
+hooks and restores your status line.
 
 ## Commands
 
@@ -85,7 +94,8 @@ not shared with the team. It keeps your other settings. `loci install --uninstal
 | `loci handoff [--format md\|json]` | Print the git handoff for the current branch, for any agent      |
 | `loci stats [--since 7d]`          | Count switches, suggestions, handoffs, and how many were adopted |
 | `loci replay`                      | Replay this repository's past sessions under the rule; estimate  |
-| `loci install [--uninstall]`       | Add or remove the Claude Code hooks                              |
+| `loci statusline [--then CMD]`     | Claude Code status line: run `CMD`, then append Loci's state     |
+| `loci install [--uninstall]`       | Add or remove the Claude Code hooks and status line              |
 | `loci hook post-tool-use`          | The PostToolUse hook (JSON on stdin)                             |
 | `loci hook session-start`          | The SessionStart hook (JSON on stdin)                            |
 
