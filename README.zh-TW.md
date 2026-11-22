@@ -74,14 +74,17 @@ make build                 # 產生 bin/loci
 bin/loci install -C ~/src/my-repo
 ```
 
-`loci install` 會在 repository 的 `.claude/settings.local.json` 加上兩個 hook 和 status line，這個
+`loci install` 會在 repository 的 `.claude/settings.local.json` 加上三個 hook 和 status line，這個
 檔案不會分享給團隊。其他設定都會保留，你原本的 status line 會先執行，行尾再接上 Loci 的狀態：
 
 ```text
-<你的 status line> · loci working · 1.2M saved · /clear ready · 1 failed
+<你的 status line> · loci working · 1.2M/340k saved · /clear ready · 1 failed
 ```
 
-`saved` 是 handoff 清掉的 context token 數，是下限。`/clear ready` 在有 handoff 等待時出現，
+`saved` 有兩欄，main/subagents。第一欄是 handoff 清掉的 context token 數，是下限。第二欄是
+subagent 結束時的 context，這些 token 沒有進入 main session，是委派省下的量，不是 handoff；
+被 resume 的 subagent 只算一次。Subagent 自己的 tool call 不會觸發 /clear 建議：它無法 clear，
+它切換的 branch 由 main session 下一個指令判斷。`/clear ready` 在有 handoff 等待時出現，
 `failed` 是最近 24 小時內 hook 出錯的次數。`loci install --uninstall` 會移除 hook，並還原你的
 status line。
 
@@ -96,6 +99,7 @@ status line。
 | `loci install [--uninstall]`       | 加上或移除 Claude Code 的 hook 和 status line      |
 | `loci hook post-tool-use`          | PostToolUse hook（JSON 從 stdin 輸入）             |
 | `loci hook session-start`          | SessionStart hook（JSON 從 stdin 輸入）            |
+| `loci hook subagent-stop`          | SubagentStop hook（JSON 從 stdin 輸入）            |
 
 每個指令都接受 `-C <dir>`；`stats` 和 `replay` 接受 `--json`。
 

@@ -75,15 +75,19 @@ make build                 # writes bin/loci
 bin/loci install -C ~/src/my-repo
 ```
 
-`loci install` adds two hooks and a status line to the repository's `.claude/settings.local.json`,
+`loci install` adds three hooks and a status line to the repository's `.claude/settings.local.json`,
 a file that is not shared with the team. It keeps your other settings, and runs your own status
 line first, so the line ends in Loci's state:
 
 ```text
-<your status line> · loci working · 1.2M saved · /clear ready · 1 failed
+<your status line> · loci working · 1.2M/340k saved · /clear ready · 1 failed
 ```
 
-`saved` is the context tokens the handoffs cleared, a floor. `/clear ready` shows while a handoff
+`saved` has two fields, main/subagents. The first is the context tokens the handoffs cleared, a
+floor. The second is the context subagents ended with, which stayed out of the main session; it is
+what delegating saved, not a handoff, and a resumed subagent counts once. A subagent's own tool calls
+never trigger a /clear suggestion: it cannot clear, and the main session judges a branch it switched
+at its next command. `/clear ready` shows while a handoff
 waits, and `failed` counts hook errors in the last 24 hours. `loci install --uninstall` removes the
 hooks and restores your status line.
 
@@ -98,6 +102,7 @@ hooks and restores your status line.
 | `loci install [--uninstall]`       | Add or remove the Claude Code hooks and status line              |
 | `loci hook post-tool-use`          | The PostToolUse hook (JSON on stdin)                             |
 | `loci hook session-start`          | The SessionStart hook (JSON on stdin)                            |
+| `loci hook subagent-stop`          | The SubagentStop hook (JSON on stdin)                            |
 
 Every command takes `-C <dir>`; `stats` and `replay` take `--json`.
 
