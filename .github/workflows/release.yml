@@ -1,0 +1,49 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # goreleaser needs the full history and the tags for the changelog.
+          fetch-depth: 0
+
+      # actions/checkout does not keep the annotated tag's message, which
+      # carries the release note.
+      - name: Fetch the annotated tag
+        run: git fetch --force origin "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Test
+        run: make test
+
+      # goreleaser's .TagBody strips apostrophes, so the note reaches it as a
+      # file outside the checkout (goreleaser refuses an untracked file there).
+      - name: Lift the release note out of the tag
+        run: git tag -l --format='%(contents:body)' "${GITHUB_REF_NAME}" > "${RUNNER_TEMP}/release-header.md"
+
+      - name: Release
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2.17"
+          args: release --clean --release-header=${{ runner.temp }}/release-header.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # a PAT with contents: write on cmj0121/homebrew-tap.
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Check the version
+        run: test "$(dist/loci_linux_amd64_v1/loci --version)" = "${GITHUB_REF_NAME}"

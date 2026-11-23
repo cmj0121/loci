@@ -1,0 +1,93 @@
+# GoReleaser builds the cross-platform binaries for a tag and pushes the Homebrew
+# cask to cmj0121/homebrew-tap, so `brew install cmj0121/tap/loci` lands a
+# prebuilt binary instead of compiling from source.
+#
+# Dry-run locally with:  goreleaser release --snapshot --clean
+version: 2
+
+project_name: loci
+
+builds:
+  - id: loci
+    main: ./cmd/loci
+    binary: loci
+    env:
+      # pure-Go build so the binary is static and cross-compiles without a C
+      # toolchain on the runner.
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      # loci --version prints the tag, the same value make build takes from
+      # git describe.
+      - -s -w -X github.com/cmj0121/loci/internal/loci.Version={{ .Tag }}
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: loci
+    ids:
+      - loci
+    formats:
+      - tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  use: git
+  sort: asc
+  filters:
+    exclude:
+      - "^docs"
+      - "^test"
+      - "^chore"
+      - "^style"
+      - "^Merge"
+
+# casks, not formulas: `brews` is deprecated since goreleaser v2.10.
+homebrew_casks:
+  - name: loci
+    ids:
+      - loci
+    binaries:
+      - loci
+    repository:
+      owner: cmj0121
+      name: homebrew-tap
+      branch: main
+      # a PAT with write access to the tap; the workflow's GITHUB_TOKEN cannot
+      # push to another repository.
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Casks
+    homepage: "https://github.com/cmj0121/loci"
+    description: "Hands an agent's session over at git boundaries"
+    commit_author:
+      name: cmj
+      email: cmj0121@gmail.com
+    commit_msg_template: "brew: bump loci to {{ .Tag }}"
+    hooks:
+      post:
+        # the binary is downloaded, not built locally, so Gatekeeper quarantines
+        # it; strip the flag or the first run is blocked.
+        install: |
+          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/loci"]
+          end
+
+release:
+  github:
+    owner: cmj0121
+    name: loci
+  # the annotated tag's subject names the release; its body reaches goreleaser
+  # as --release-header from the workflow, since .TagBody strips apostrophes.
+  name_template: '{{ trimprefix .TagSubject "loci " }}'
+  mode: replace
