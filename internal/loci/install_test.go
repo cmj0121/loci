@@ -102,6 +102,9 @@ func TestInstallCommand(t *testing.T) {
 	if c := commands(readSettings(t, dir), "SessionStart"); len(c) != 1 || !strings.HasSuffix(c[0], " hook session-start") {
 		t.Errorf("SessionStart = %v", c)
 	}
+	if c := commands(readSettings(t, dir), "SubagentStop"); len(c) != 1 || !strings.HasSuffix(c[0], " hook subagent-stop") {
+		t.Errorf("SubagentStop = %v", c)
+	}
 	if _, out, _ = run(t, "", "install", "-C", dir); !strings.Contains(out, "unchanged") {
 		t.Errorf("second install: %q", out)
 	}

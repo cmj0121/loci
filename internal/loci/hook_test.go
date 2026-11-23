@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -294,5 +295,82 @@ func TestHandoffNamesThePendingPreviousBranch(t *testing.T) {
 	}
 	if st, _ := loadState(filepath.Join(dir, ".git")); st.Pending == nil {
 		t.Error("loci handoff consumed the pending handoff")
+	}
+}
+
+// subagentTranscript writes a subagent's own transcript, whose turns are all
+// sidechain, ending with ctx tokens of context.
+func subagentTranscript(t *testing.T, ctx int) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "subagents", "agent-a1.jsonl")
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ls := []string{
+		`{"type":"user","isSidechain":true,"agentId":"a1","message":{"content":"look"}}`,
+		`{"type":"assistant","isSidechain":true,"agentId":"a1","message":{"usage":{"input_tokens":5,"cache_read_input_tokens":100}}}`,
+		fmt.Sprintf(`{"type":"assistant","isSidechain":true,"agentId":"a1","message":{"usage":{"input_tokens":2,"cache_creation_input_tokens":%d,"cache_read_input_tokens":%d}}}`, ctx/4, ctx-ctx/4-2),
+	}
+	if err := os.WriteFile(p, []byte(strings.Join(ls, "\n")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestSubagentTokens(t *testing.T) {
+	p := subagentTranscript(t, 40_000)
+	if n, err := SubagentTokens(p); err != nil || n != 40_000 {
+		t.Errorf("SubagentTokens = %d, %v", n, err)
+	}
+	if n, _ := ContextTokens(p); n != 0 {
+		t.Errorf("ContextTokens read a sidechain turn: %d", n)
+	}
+}
+
+func TestPostToolUseIgnoresSubagents(t *testing.T) {
+	dir := newRepo(t)
+	tp := transcript(t, 250_000)
+	main := map[string]string{"session_id": "s1", "cwd": dir, "transcript_path": tp, "tool_name": "Bash"}
+	sub := map[string]string{"session_id": "s1", "cwd": dir, "transcript_path": tp, "tool_name": "Bash",
+		"agent_id": "a1", "agent_type": "general-purpose"}
+	sh(t, dir, "git", "switch", "-q", "-c", "feat/a")
+	hook(t, "post-tool-use", main)
+	sh(t, dir, "git", "switch", "-q", "-c", "feat/b")
+	if out := hook(t, "post-tool-use", sub); out != "" {
+		t.Fatalf("a subagent was told %q", additional(t, out))
+	}
+	if st, _ := loadState(filepath.Join(dir, ".git")); st.Branch != "feat/a" || st.Pending != nil {
+		t.Errorf("a subagent's call moved the state: %+v", st)
+	}
+	if ls := logLines(t, dir); len(ls) != 0 {
+		t.Errorf("a subagent's call was logged: %v", ls)
+	}
+	// The main session's next command judges the switch the subagent made.
+	if msg := additional(t, hook(t, "post-tool-use", main)); !strings.Contains(msg, "feat/a to feat/b") {
+		t.Errorf("main session missed the switch: %q", msg)
+	}
+}
+
+func TestSubagentStopLogsItsContext(t *testing.T) {
+	dir := newRepo(t)
+	in := map[string]string{"session_id": "s1", "cwd": dir, "transcript_path": transcript(t, 250_000),
+		"agent_id": "a1", "agent_type": "Explore", "agent_transcript_path": subagentTranscript(t, 40_000)}
+	if out := hook(t, "subagent-stop", in); out != "" {
+		t.Errorf("subagent-stop said %q", out)
+	}
+	ls := logLines(t, dir)
+	if len(ls) != 1 || ls[0]["message"] != msgSubagent || ls[0]["agent"] != "a1" || ls[0]["type"] != "Explore" || ls[0]["context"] != 40_000.0 {
+		t.Fatalf("log = %v", ls)
+	}
+	// Not from a subagent, no transcript, or an empty one: nothing is logged.
+	for _, drop := range []string{"agent_id", "agent_transcript_path"} {
+		m := maps.Clone(in)
+		delete(m, drop)
+		hook(t, "subagent-stop", m)
+	}
+	in["agent_transcript_path"] = filepath.Join(t.TempDir(), "missing.jsonl")
+	hook(t, "subagent-stop", in)
+	if ls := logLines(t, dir); len(ls) != 2 || ls[1]["level"] != "warn" {
+		t.Errorf("log = %v", ls)
 	}
 }

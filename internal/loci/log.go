@@ -13,6 +13,7 @@ const (
 	msgReplaced = "replaced" // a suggestion nobody acted on before the next one
 	msgHandoff  = "handoff"  // a handoff injected into a new session
 	msgStale    = "stale"    // a suggestion picked up too late and dropped
+	msgSubagent = "subagent" // a subagent stopped; its context never reached the main session
 	msgFailed   = "hook failed"
 )
 

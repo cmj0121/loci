@@ -26,7 +26,11 @@ type Stats struct {
 	Stale     int            `json:"stale"`     // suggestions picked up too late
 	Waiting   int            `json:"waiting"`   // suggestions still pending now
 	Cleared   int            `json:"cleared"`   // context tokens the handoffs replaced
+	Subagents int            `json:"subagents"` // subagents that stopped
+	Delegated int            `json:"delegated"` // context tokens subagents kept out of the main session
 	Failures  int            `json:"failures"`  // hook errors
+
+	agents map[string]int // a resumed subagent stops again: keep its largest context
 }
 
 // Adoption is the share of suggestions that ended in a handoff, 0 to 1.
@@ -43,6 +47,7 @@ type logEntry struct {
 	Message string    `json:"message"`
 	Reason  string    `json:"reason"`
 	Context int       `json:"context"`
+	Agent   string    `json:"agent"`
 }
 
 // Gather reads every worktree's log of the repository at dir; since > 0 keeps
@@ -53,7 +58,7 @@ func Gather(dir string, since time.Duration, now time.Time) (Stats, error) {
 		return Stats{}, err
 	}
 	// The repository is named after the main worktree, from any of its worktrees.
-	s := Stats{Repo: filepath.Base(filepath.Dir(common)), Reasons: map[string]int{}}
+	s := Stats{Repo: filepath.Base(filepath.Dir(common)), Reasons: map[string]int{}, agents: map[string]int{}}
 	gitDirs, _ := filepath.Glob(filepath.Join(common, "worktrees", "*"))
 	gitDirs = append([]string{common}, gitDirs...)
 	var cut time.Time
@@ -74,6 +79,10 @@ func Gather(dir string, since time.Duration, now time.Time) (Stats, error) {
 		if err != nil {
 			return s, fmt.Errorf("%s: %w", logPath(gd), err)
 		}
+	}
+	s.Subagents = len(s.agents)
+	for _, n := range s.agents {
+		s.Delegated += n
 	}
 	return s, nil
 }
@@ -100,6 +109,11 @@ func (s *Stats) read(r io.Reader, cut time.Time) error {
 			s.Replaced++
 		case msgStale:
 			s.Stale++
+		case msgSubagent:
+			if e.Agent == "" {
+				continue
+			}
+			s.agents[e.Agent] = max(s.agents[e.Agent], e.Context)
 		case msgFailed:
 			s.Failures++
 		default:
@@ -146,6 +160,7 @@ func (s Stats) Table() string {
 		note = fmt.Sprintf("%s on average", tokens(s.Cleared/s.Handoffs))
 	}
 	fmt.Fprintf(&b, "%-22s %8s  %s\n", "context cleared", tokens(s.Cleared), note)
+	fmt.Fprintf(&b, "%-22s %8s  %d subagents kept it out of the main session\n", "context delegated", tokens(s.Delegated), s.Subagents)
 	row("hook failures", s.Failures, "see .git/loci/log")
 	if s.Logs == 0 {
 		b.WriteString("\nNo log yet: run `loci install`, then work in an agent session.\n")

@@ -36,7 +36,14 @@ const (
 // ContextTokens is the prompt size of the last main-chain assistant turn in a
 // transcript. It reads the file from the end, so a 30 MB transcript costs one
 // or two small reads.
-func ContextTokens(path string) (int, error) {
+func ContextTokens(path string) (int, error) { return lastPrompt(path, false) }
+
+// SubagentTokens is the prompt size of the last assistant turn in a subagent's
+// own transcript, whose turns are all marked as a sidechain.
+func SubagentTokens(path string) (int, error) { return lastPrompt(path, true) }
+
+// lastPrompt reads the last assistant turn with usage; sidechain turns count only when sidechain is set.
+func lastPrompt(path string, sidechain bool) (int, error) {
 	if path == "" {
 		return 0, nil
 	}
@@ -70,7 +77,7 @@ func ContextTokens(path string) (int, error) {
 			if json.Unmarshal(l, &r) != nil {
 				continue
 			}
-			if r.Type == "assistant" && !r.IsSidechain && r.Message.Usage != nil {
+			if r.Type == "assistant" && (sidechain || !r.IsSidechain) && r.Message.Usage != nil {
 				return r.Message.Usage.prompt(), nil
 			}
 		}

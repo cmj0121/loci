@@ -38,6 +38,7 @@ type CLI struct {
 type HookCmd struct {
 	PostToolUse  PostToolUseCmd  `cmd:"" name:"post-tool-use" help:"PostToolUse: suggest /clear at a switch to a new branch."`
 	SessionStart SessionStartCmd `cmd:"" name:"session-start" help:"SessionStart: inject a pending handoff."`
+	SubagentStop SubagentStopCmd `cmd:"" name:"subagent-stop" help:"SubagentStop: record the context a subagent kept out of the main session."`
 }
 
 type PostToolUseCmd struct{}
@@ -51,6 +52,13 @@ type SessionStartCmd struct{}
 
 func (SessionStartCmd) Run(e *env) error {
 	runHook("SessionStart", SessionStart, e.stdin, e.stdout)
+	return nil
+}
+
+type SubagentStopCmd struct{}
+
+func (SubagentStopCmd) Run(e *env) error {
+	runHook("SubagentStop", SubagentStop, e.stdin, e.stdout)
 	return nil
 }
 

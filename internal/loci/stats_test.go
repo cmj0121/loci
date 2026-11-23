@@ -90,3 +90,24 @@ func TestTokens(t *testing.T) {
 		}
 	}
 }
+
+func TestGatherCountsEachSubagentOnce(t *testing.T) {
+	dir := newRepo(t)
+	writeLog(t, filepath.Join(dir, ".git"),
+		`{"level":"info","agent":"a1","context":30000,"time":"2026-11-20T10:00:00+08:00","message":"subagent"}`,
+		// a1 was resumed and stopped again with more context: it counts once, at its largest.
+		`{"level":"info","agent":"a1","context":45000,"time":"2026-11-20T10:05:00+08:00","message":"subagent"}`,
+		`{"level":"info","agent":"a2","context":20000,"time":"2026-11-20T10:06:00+08:00","message":"subagent"}`,
+		`{"level":"info","context":99000,"time":"2026-11-20T10:07:00+08:00","message":"subagent"}`,
+	)
+	s, err := Gather(dir, 0, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Subagents != 2 || s.Delegated != 65_000 || s.Cleared != 0 {
+		t.Errorf("stats = %+v", s)
+	}
+	if tab := s.Table(); !strings.Contains(tab, "65k  2 subagents") {
+		t.Errorf("table:\n%s", tab)
+	}
+}
