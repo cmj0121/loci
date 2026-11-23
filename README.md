@@ -89,16 +89,16 @@ a file that is not shared with the team. It keeps your other settings, and runs 
 line first, so the line ends in Loci's state:
 
 ```text
-<your status line> · loci working · 1.2M/340k saved · /clear ready · 1 failed
+<your status line> · loci working · 1.2M/340k saved · new branch: /clear to hand off · 1 failed
 ```
 
 `saved` has two fields, main/subagents. The first is the context tokens the handoffs cleared, a
 floor. The second is the context subagents ended with, which stayed out of the main session; it is
 what delegating saved, not a handoff, and a resumed subagent counts once. A subagent's own tool calls
 never trigger a /clear suggestion: it cannot clear, and the main session judges a branch it switched
-at its next command. `/clear ready` shows while a handoff
-waits, and `failed` counts hook errors in the last 24 hours. `loci install --uninstall` removes the
-hooks and restores your status line.
+at its next command. `new branch: /clear to hand off` shows while a handoff waits, in yellow unless
+`NO_COLOR` is set, and `failed` counts hook errors in the last 24 hours. `loci install --uninstall`
+removes the hooks and restores your status line.
 
 ## Commands
 
