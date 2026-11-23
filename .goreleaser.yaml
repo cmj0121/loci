@@ -91,3 +91,6 @@ release:
   # as --release-header from the workflow, since .TagBody strips apostrophes.
   name_template: '{{ trimprefix .TagSubject "loci " }}'
   mode: replace
+  # a re-run deletes the assets already on the release before uploading, or
+  # GitHub rejects each one as already_exists.
+  replace_existing_artifacts: true
