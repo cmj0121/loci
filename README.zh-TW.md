@@ -67,12 +67,21 @@ hook 永遠不會讓 agent 失敗：錯誤都寫進 `.git/loci/log`。
 
 ## 安裝
 
-Loci 是一個 Go binary。
+Loci 是一個 Go binary。macOS 或 Linux 可以用 Homebrew 安裝預先 build 好的版本：
 
 ```bash
-make build                 # 產生 bin/loci
-bin/loci install -C ~/src/my-repo
+brew install cmj0121/tap/loci
+loci install -C ~/src/my-repo
 ```
+
+也可以從原始碼 build，產生 `bin/loci`：
+
+```bash
+make build
+```
+
+[releases](https://github.com/cmj0121/loci/releases) 頁面也有 linux 與 darwin 的 amd64、arm64
+binary。
 
 `loci install` 會在 repository 的 `.claude/settings.local.json` 加上三個 hook 和 status line，這個
 檔案不會分享給團隊。其他設定都會保留，你原本的 status line 會先執行，行尾再接上 Loci 的狀態：

@@ -68,12 +68,21 @@ for 24 hours. Hooks never fail the agent: errors go to `.git/loci/log`.
 
 ## Install
 
-Loci is one Go binary.
+Loci is one Go binary. Install the prebuilt one with Homebrew on macOS or Linux:
 
 ```bash
-make build                 # writes bin/loci
-bin/loci install -C ~/src/my-repo
+brew install cmj0121/tap/loci
+loci install -C ~/src/my-repo
 ```
+
+Or build it from source, which writes `bin/loci`:
+
+```bash
+make build
+```
+
+The [releases](https://github.com/cmj0121/loci/releases) page also has the binaries for linux and
+darwin on amd64 and arm64.
 
 `loci install` adds three hooks and a status line to the repository's `.claude/settings.local.json`,
 a file that is not shared with the team. It keeps your other settings, and runs your own status
