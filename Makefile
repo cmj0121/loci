@@ -1,7 +1,7 @@
 SUBDIR :=
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo 0.0.0-dev)
 
-.PHONY: all clean test run build upgrade help $(SUBDIR)
+.PHONY: all clean test run build install upgrade help $(SUBDIR)
 
 all: $(SUBDIR) 		# default action
 	@[ -f .git/hooks/pre-commit ] || pre-commit install --install-hooks
@@ -19,6 +19,9 @@ run:				# run in the local environment
 
 build:				# build the binary/library
 	go build -ldflags "-X github.com/cmj0121/loci/internal/loci.Version=$(VERSION)" -o bin/loci ./cmd/loci
+
+install:			# install loci into $(go env GOBIN), else $(go env GOPATH)/bin
+	go install -ldflags "-X github.com/cmj0121/loci/internal/loci.Version=$(VERSION)" ./cmd/loci
 
 upgrade:			# upgrade all the necessary packages
 	pre-commit autoupdate
