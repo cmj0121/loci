@@ -12,10 +12,11 @@ import (
 )
 
 // statusRepo is a repository with Loci's hooks installed, a handoff of 297k
-// context in its log, and an empty home.
+// context in its log, an empty home, and NO_COLOR unset.
 func statusRepo(t *testing.T) string {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
+	t.Setenv("NO_COLOR", "")
 	dir := newRepo(t)
 	if _, _, err := Install(dir, "/usr/local/bin/loci", false); err != nil {
 		t.Fatal(err)
@@ -88,6 +89,7 @@ func TestStatuslineWithoutHooks(t *testing.T) {
 
 func TestStatuslineNeverFails(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
+	t.Setenv("NO_COLOR", "")
 	isolateGit(t)
 	dir := t.TempDir()
 	if out := statusline(t, dir, "--then", "echo partial; exit 3"); out != "\n" {
@@ -124,9 +126,14 @@ func TestStatuslineClearReady(t *testing.T) {
 	if err := saveState(gd, State{Branch: "feat/x", Pending: &Pending{From: "main", To: "feat/x", At: time.Now()}}); err != nil {
 		t.Fatal(err)
 	}
-	if out := statusline(t, dir); out != "loci working · 297k/0 saved · /clear ready\n" {
+	if out := statusline(t, dir); out != "loci working · 297k/0 saved · \x1b[33mnew branch: /clear to hand off\x1b[0m\n" {
 		t.Errorf("pending: got %q", out)
 	}
+	t.Setenv("NO_COLOR", "1")
+	if out := statusline(t, dir); out != "loci working · 297k/0 saved · new branch: /clear to hand off\n" {
+		t.Errorf("pending with NO_COLOR: got %q", out)
+	}
+	t.Setenv("NO_COLOR", "")
 	if err := saveState(gd, State{Branch: "feat/x"}); err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +167,7 @@ func TestStatuslineStalePendingNotReady(t *testing.T) {
 	if err := saveState(filepath.Join(dir, ".git"), State{Branch: "feat/x", Pending: &Pending{From: "main", To: "feat/x", At: at.Add(-time.Hour)}}); err != nil {
 		t.Fatal(err)
 	}
-	if out := statusline(t, dir); out != "loci working · 297k/0 saved · /clear ready\n" {
+	if out := statusline(t, dir); out != "loci working · 297k/0 saved · \x1b[33mnew branch: /clear to hand off\x1b[0m\n" {
 		t.Errorf("fresh: got %q", out)
 	}
 	now = func() time.Time { return at.Add(pendingTTL) }

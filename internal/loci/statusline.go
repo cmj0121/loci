@@ -132,7 +132,11 @@ func statusSegment(dir string) string {
 		seg += " · " + tokens(c.Cleared) + "/" + tokens(c.Delegated) + " saved"
 	}
 	if recent(c.PendingAt, at, pendingTTL) > 0 {
-		seg += " · /clear ready"
+		hint := "new branch: /clear to hand off"
+		if os.Getenv("NO_COLOR") == "" {
+			hint = "\x1b[33m" + hint + "\x1b[0m" // yellow, unless no-color.org's NO_COLOR is set
+		}
+		seg += " · " + hint
 	}
 	if failed := recent(c.FailedAt, at, failureWindow); failed > 0 {
 		seg += fmt.Sprintf(" · %d failed", failed)

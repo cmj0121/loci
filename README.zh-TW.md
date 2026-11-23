@@ -87,13 +87,14 @@ binary。
 檔案不會分享給團隊。其他設定都會保留，你原本的 status line 會先執行，行尾再接上 Loci 的狀態：
 
 ```text
-<你的 status line> · loci working · 1.2M/340k saved · /clear ready · 1 failed
+<你的 status line> · loci working · 1.2M/340k saved · new branch: /clear to hand off · 1 failed
 ```
 
 `saved` 有兩欄，main/subagents。第一欄是 handoff 清掉的 context token 數，是下限。第二欄是
 subagent 結束時的 context，這些 token 沒有進入 main session，是委派省下的量，不是 handoff；
 被 resume 的 subagent 只算一次。Subagent 自己的 tool call 不會觸發 /clear 建議：它無法 clear，
-它切換的 branch 由 main session 下一個指令判斷。`/clear ready` 在有 handoff 等待時出現，
+它切換的 branch 由 main session 下一個指令判斷。`new branch: /clear to hand off` 在有 handoff 等待時出現，
+除非設定了 `NO_COLOR`，否則以黃色顯示；
 `failed` 是最近 24 小時內 hook 出錯的次數。`loci install --uninstall` 會移除 hook，並還原你的
 status line。
 
