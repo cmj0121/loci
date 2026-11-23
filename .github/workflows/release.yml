@@ -36,7 +36,7 @@ jobs:
         run: git tag -l --format='%(contents:body)' "${GITHUB_REF_NAME}" > "${RUNNER_TEMP}/release-header.md"
 
       - name: Release
-        uses: goreleaser/goreleaser-action@v6
+        uses: goreleaser/goreleaser-action@v7
         with:
           version: "~> v2.17"
           args: release --clean --release-header=${{ runner.temp }}/release-header.md
