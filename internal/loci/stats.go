@@ -25,6 +25,8 @@ type Stats struct {
 	Replaced  int            `json:"replaced"`  // suggestions nobody acted on before the next one
 	Stale     int            `json:"stale"`     // suggestions picked up too late
 	Waiting   int            `json:"waiting"`   // suggestions still pending now
+	Reminded  int            `json:"reminded"`  // reminders at a turn's end
+	Gated     int            `json:"gated"`     // prompts held once for a waiting handoff
 	Cleared   int            `json:"cleared"`   // context tokens the handoffs replaced
 	Subagents int            `json:"subagents"` // subagents that stopped
 	Delegated int            `json:"delegated"` // context tokens subagents kept out of the main session
@@ -48,6 +50,7 @@ type logEntry struct {
 	Reason  string    `json:"reason"`
 	Context int       `json:"context"`
 	Agent   string    `json:"agent"`
+	Kept    bool      `json:"kept"` // a handoff copied to a session beside the live one
 }
 
 // Gather reads every worktree's log of the repository at dir; since > 0 keeps
@@ -103,12 +106,19 @@ func (s *Stats) read(r io.Reader, cut time.Time) error {
 				s.Suggested++
 			}
 		case msgHandoff:
+			if e.Kept {
+				continue // a copy: the handoff still waits for its own /clear
+			}
 			s.Handoffs++
 			s.Cleared += e.Context
 		case msgReplaced:
 			s.Replaced++
 		case msgStale:
 			s.Stale++
+		case msgReminded:
+			s.Reminded++
+		case msgGated:
+			s.Gated++
 		case msgSubagent:
 			if e.Agent == "" {
 				continue
@@ -155,6 +165,8 @@ func (s Stats) Table() string {
 	row("  replaced", s.Replaced, "the next switch came first")
 	row("  stale", s.Stale, "picked up after 24h")
 	row("  waiting", s.Waiting, "pending now")
+	row("  reminded", s.Reminded, "at a turn's end")
+	row("  gated", s.Gated, "a prompt held once (loci.nudge gate)")
 	note := ""
 	if s.Handoffs > 0 {
 		note = fmt.Sprintf("%s on average", tokens(s.Cleared/s.Handoffs))

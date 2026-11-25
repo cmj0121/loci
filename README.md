@@ -63,8 +63,24 @@ The handoff names the repository, the branch and its issue, the previous branch,
 merge-base, the upstream, the commits and changed files since the base, and what is uncommitted.
 It also tells the new session that the issue's text and decisions are not in its context.
 
-Loci never runs `/clear` itself: you decide. A handoff waits for the next cleared or new session
-for 24 hours. Hooks never fail the agent: errors go to `.git/loci/log`.
+Loci never runs `/clear` itself: you decide. The suggestion is shown to you directly, not only told
+to the agent, so it reaches you even when the agent does not pass it on. A handoff waits for the
+next cleared or new session for 24 hours. Sessions that share a worktree keep what they visited
+apart, and a session started beside the one that crossed the boundary, while that one is still
+active, gets a copy and leaves the handoff for its `/clear`. Hooks never fail the agent: errors go
+to `.git/loci/log`.
+
+How hard Loci presses for `/clear` while a handoff waits is `loci.nudge`:
+
+| Level            | At the switch                 | At the turn's end | Your next prompt                      |
+| ---------------- | ----------------------------- | ----------------- | ------------------------------------- |
+| `off`            | the agent is told             |                   |                                       |
+| `notice`         | you are told, and the agent   | one reminder      |                                       |
+| `ask`            | as notice; the agent asks you | one reminder      |                                       |
+| `gate` (default) | as notice                     | one reminder      | held once: `/clear`, or send it again |
+
+The gate holds a prompt once per handoff, and only in the session that crossed the boundary. A
+slash command, and a turn Claude Code starts on its own, always go through.
 
 ## Install
 
@@ -84,7 +100,7 @@ make build
 The [releases](https://github.com/cmj0121/loci/releases) page also has the binaries for linux and
 darwin on amd64 and arm64.
 
-`loci install` adds three hooks and a status line to the repository's `.claude/settings.local.json`,
+`loci install` adds five hooks and a status line to the repository's `.claude/settings.local.json`,
 a file that is not shared with the team. It keeps your other settings, and runs your own status
 line first, so the line ends in Loci's state:
 
@@ -112,6 +128,8 @@ removes the hooks and restores your status line.
 | `loci hook post-tool-use`          | The PostToolUse hook (JSON on stdin)                             |
 | `loci hook session-start`          | The SessionStart hook (JSON on stdin)                            |
 | `loci hook subagent-stop`          | The SubagentStop hook (JSON on stdin)                            |
+| `loci hook stop`                   | The Stop hook: one reminder of a waiting handoff                 |
+| `loci hook user-prompt-submit`     | The UserPromptSubmit hook: the `loci.nudge` gate                 |
 
 Every command takes `-C <dir>`; `stats` and `replay` take `--json`.
 
@@ -136,6 +154,7 @@ All settings live in git config, per repository or global.
 | `loci.threshold` | `100000`                                      | Context tokens at which a switch is a handoff |
 | `loci.skip`      | `main`, `master`, `develop`, `release/*`, ... | More long-lived branch globs (`--add`)        |
 | `loci.base`      | `origin/main`, `origin/master`, ...           | The base the handoff compares with            |
+| `loci.nudge`     | `gate`                                        | `off`, `notice`, `ask` or `gate`; see above   |
 
 ## Limits
 

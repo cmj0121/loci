@@ -23,13 +23,26 @@ type HookInput struct {
 	AgentID             string `json:"agent_id"`
 	AgentType           string `json:"agent_type"`
 	AgentTranscriptPath string `json:"agent_transcript_path"`
+	Prompt              string `json:"prompt"`           // UserPromptSubmit: what the user sent
+	StopHookActive      bool   `json:"stop_hook_active"` // Stop: the turn already continued for a stop hook
 }
 
 type hookOutput struct {
-	HookSpecificOutput struct {
-		HookEventName     string `json:"hookEventName"`
-		AdditionalContext string `json:"additionalContext"`
-	} `json:"hookSpecificOutput"`
+	// SystemMessage is shown to the user by Claude Code itself, so a
+	// suggestion reaches them even when the agent does not pass it on.
+	SystemMessage string `json:"systemMessage,omitempty"`
+	// Decision "block" with Reason holds a UserPromptSubmit prompt; Claude
+	// Code shows Reason and the prompt to the user, not to the agent.
+	Decision string `json:"decision,omitempty"`
+	Reason   string `json:"reason,omitempty"`
+	// HookSpecificOutput is left out when there is no context: at Stop,
+	// context for the agent would keep the turn going.
+	HookSpecificOutput *hookSpecific `json:"hookSpecificOutput,omitempty"`
+}
+
+type hookSpecific struct {
+	HookEventName     string `json:"hookEventName"`
+	AdditionalContext string `json:"additionalContext"`
 }
 
 // worktree is where a hook runs: the worktree's .git directory and its branch.
@@ -52,8 +65,12 @@ func locate(dir string) (worktree, error) {
 	return w, nil
 }
 
-// hookFunc handles one hook event; "" means there is nothing to tell the agent.
-type hookFunc func(in HookInput, w worktree, log zerolog.Logger) (string, error)
+// reply is what a hook tells: Context to the agent, Notice to the user, and
+// Block, when set, holds the user's prompt with that reason.
+type reply struct{ Context, Notice, Block string }
+
+// hookFunc handles one hook event; a zero reply means there is nothing to tell.
+type hookFunc func(in HookInput, w worktree, log zerolog.Logger) (reply, error)
 
 // now is replaced in tests.
 var now = time.Now
@@ -61,17 +78,16 @@ var now = time.Now
 // PostToolUse watches the branch after each shell command and, at a switch to
 // a branch new to this session on a large context, asks the agent to suggest
 // /clear.
-func PostToolUse(in HookInput, w worktree, log zerolog.Logger) (string, error) {
+func PostToolUse(in HookInput, w worktree, log zerolog.Logger) (reply, error) {
 	if in.AgentID != "" {
 		// A subagent cannot /clear and its context is not the main session's.
 		// A branch it switched is judged at the main session's next command.
-		return "", nil
+		return reply{}, nil
 	}
 	st, err := loadState(w.gitDir)
 	if err != nil {
-		return "", err
+		return reply{}, err
 	}
-	before := st.Session
 	v := observe(&st, in.SessionID, w.branch, now(),
 		func() Config { return loadConfig(in.Cwd) },
 		func() int {
@@ -81,14 +97,14 @@ func PostToolUse(in HookInput, w worktree, log zerolog.Logger) (string, error) {
 			}
 			return ctx
 		})
-	if v.Reason == ReasonSame && st.Session == before {
-		return "", nil // nothing changed: no write
+	if v.Reason == ReasonSame && !v.touched {
+		return reply{}, nil // nothing changed: no write
 	}
 	if err := saveState(w.gitDir, st); err != nil {
-		return "", err
+		return reply{}, err
 	}
 	if v.Reason == ReasonSame || v.Reason == ReasonFirst {
-		return "", nil
+		return reply{}, nil
 	}
 	if p := v.Replaced; p != nil {
 		log.Info().Str("session", in.SessionID).Str("from", p.From).Str("to", p.To).Int("context", p.Context).Msg(msgReplaced)
@@ -99,61 +115,138 @@ func PostToolUse(in HookInput, w worktree, log zerolog.Logger) (string, error) {
 	}
 	ev.Bool("suggested", v.Reason == ReasonSuggest).Msg(msgBoundary)
 	if v.Reason != ReasonSuggest {
-		return "", nil
+		return reply{}, nil
 	}
-	return fmt.Sprintf("Loci: the branch changed from %s to %s while the context is %dk tokens. "+
+	r := reply{Context: fmt.Sprintf("Loci: the branch changed from %s to %s while the context is %dk tokens. "+
 		"This is a task boundary. Tell the user they can run /clear now; Loci will hand the "+
-		"git state of %s to the new session, so nothing from git is lost.", v.From, v.To, v.Context/1000, v.To), nil
+		"git state of %s to the new session, so nothing from git is lost.", v.From, v.To, v.Context/1000, v.To)}
+	switch loadNudge(in.Cwd) {
+	case NudgeOff:
+		return r, nil
+	case NudgeAsk:
+		r.Context += " Before you go on, ask the user with AskUserQuestion whether to stop here so they " +
+			"can run /clear, or to keep going in this session. You cannot run /clear yourself."
+	}
+	r.Notice = fmt.Sprintf("Loci: new task on %s with %dk tokens of context. Run /clear to start it "+
+		"fresh; the git state of %s is handed to the new session.", v.To, v.Context/1000, v.To)
+	return r, nil
 }
 
-// SessionStart hands a pending boundary over to a cleared or new session.
-func SessionStart(in HookInput, w worktree, log zerolog.Logger) (string, error) {
+// waiting is the handoff this session left, if it still waits: a pending
+// boundary of another session, or a stale one, is not this session's to press.
+func waiting(st State, session string, at time.Time) *Pending {
+	p := st.Pending
+	if p == nil || at.Sub(p.At) > pendingTTL || (p.Session != "" && p.Session != session) {
+		return nil
+	}
+	return p
+}
+
+// Stop reminds the user, once per handoff, at the end of the turn: the moment
+// they are about to type. It never tells the agent, so the turn still ends.
+func Stop(in HookInput, w worktree, log zerolog.Logger) (reply, error) {
+	if in.AgentID != "" || in.StopHookActive {
+		return reply{}, nil
+	}
+	st, err := loadState(w.gitDir)
+	p := waiting(st, in.SessionID, now())
+	if err != nil || p == nil || p.Reminded || loadNudge(in.Cwd) == NudgeOff {
+		return reply{}, err
+	}
+	p.Reminded = true
+	if err := saveState(w.gitDir, st); err != nil {
+		return reply{}, err
+	}
+	log.Info().Str("session", in.SessionID).Str("to", p.To).Msg(msgReminded)
+	return reply{Notice: fmt.Sprintf("Loci: a handoff of %s is waiting. Run /clear to go on with a clean "+
+		"context; the git state of %s carries over.", p.To, p.To)}, nil
+}
+
+// UserPromptSubmit, at loci.nudge gate, holds the user's next prompt once while
+// a handoff waits, so they choose: /clear, or send it again to stay. A slash
+// command, or a turn Claude Code starts itself, always goes through.
+func UserPromptSubmit(in HookInput, w worktree, log zerolog.Logger) (reply, error) {
+	pr := strings.TrimSpace(in.Prompt)
+	if in.AgentID != "" || pr == "" || strings.HasPrefix(pr, "/") || strings.HasPrefix(pr, "<") {
+		return reply{}, nil
+	}
+	st, err := loadState(w.gitDir)
+	p := waiting(st, in.SessionID, now())
+	if err != nil || p == nil || p.Gated || loadNudge(in.Cwd) != NudgeGate {
+		return reply{}, err
+	}
+	p.Gated = true
+	if err := saveState(w.gitDir, st); err != nil {
+		return reply{}, err
+	}
+	log.Info().Str("session", in.SessionID).Str("to", p.To).Int("context", p.Context).Msg(msgGated)
+	return reply{Block: fmt.Sprintf("Loci: a handoff of %s is waiting (%s → %s at %dk tokens). Run /clear "+
+		"to start with a clean context; the git state carries over. To stay in this session, send your "+
+		"prompt again. (git config loci.nudge notice turns this off.)", p.To, p.From, p.To, p.Context/1000)}, nil
+}
+
+// SessionStart hands a pending boundary over to a cleared or new session. A
+// new session started beside the one that crossed the boundary, while that
+// one is still live, gets a copy: the handoff stays for that session's /clear.
+func SessionStart(in HookInput, w worktree, log zerolog.Logger) (reply, error) {
 	if in.Source != "clear" && in.Source != "startup" {
-		return "", nil // resume and compact keep their context: nothing to hand over
+		return reply{}, nil // resume and compact keep their context: nothing to hand over
 	}
 	st, err := loadState(w.gitDir)
 	if err != nil || st.Pending == nil {
-		return "", err
+		return reply{}, err
 	}
 	p := st.Pending
-	st.Pending = nil
+	at := now()
+	age := at.Sub(p.At)
+	keep := in.Source == "startup" && age <= pendingTTL && p.Session != in.SessionID && st.live(p.Session, at)
+	if !keep {
+		st.Pending = nil
+		if in.Source == "clear" {
+			delete(st.Sessions, p.Session) // cleared: that session id is gone
+		}
+	}
 	if w.branch != "" {
 		st.Branch = w.branch
 	}
 	if err := saveState(w.gitDir, st); err != nil {
-		return "", err
+		return reply{}, err
 	}
-	if age := now().Sub(p.At); age > pendingTTL {
+	if age > pendingTTL {
 		log.Info().Str("session", in.SessionID).Str("to", p.To).Dur("age", age).Msg(msgStale)
-		return "", nil
+		return reply{}, nil
 	}
 	f, err := Collect(in.Cwd, "", p.From)
 	if err != nil {
-		return "", err
+		return reply{}, err
 	}
 	md := f.Markdown()
 	log.Info().Str("session", in.SessionID).Str("source", in.Source).Str("from", p.From).Str("to", f.Branch).
-		Int("context", p.Context).Int("chars", len(md)).Msg(msgHandoff)
-	return md, nil
+		Int("context", p.Context).Int("chars", len(md)).Bool("kept", keep).Msg(msgHandoff)
+	r := reply{Context: md}
+	if loadNudge(in.Cwd) != NudgeOff {
+		r.Notice = fmt.Sprintf("Loci: handed the git state of %s to this session.", f.Branch)
+	}
+	return r, nil
 }
 
 // SubagentStop records the context a subagent ended with: tokens its work
 // read that never entered the main session. It tells the agent nothing.
-func SubagentStop(in HookInput, w worktree, log zerolog.Logger) (string, error) {
+func SubagentStop(in HookInput, w worktree, log zerolog.Logger) (reply, error) {
 	if in.AgentID == "" || in.AgentTranscriptPath == "" {
-		return "", nil
+		return reply{}, nil
 	}
 	ctx, err := SubagentTokens(in.AgentTranscriptPath)
 	if err != nil {
 		log.Warn().Err(err).Str("transcript", in.AgentTranscriptPath).Msg("subagent transcript unreadable")
-		return "", nil
+		return reply{}, nil
 	}
 	if ctx == 0 {
-		return "", nil
+		return reply{}, nil
 	}
 	log.Info().Str("session", in.SessionID).Str("agent", in.AgentID).Str("type", in.AgentType).
 		Int("context", ctx).Msg(msgSubagent)
-	return "", nil
+	return reply{}, nil
 }
 
 // runHook reads a hook payload, runs fn and writes Claude Code's hook JSON.
@@ -174,12 +267,16 @@ func runHook(event string, fn hookFunc, stdin io.Reader, stdout io.Writer) {
 		log.Error().Err(err).Str("event", event).Msg(msgFailed)
 		return
 	}
-	if msg == "" {
+	if msg == (reply{}) {
 		return
 	}
-	var out hookOutput
-	out.HookSpecificOutput.HookEventName = event
-	out.HookSpecificOutput.AdditionalContext = msg
+	out := hookOutput{SystemMessage: msg.Notice}
+	if msg.Block != "" {
+		out.Decision, out.Reason = "block", msg.Block
+	}
+	if msg.Context != "" {
+		out.HookSpecificOutput = &hookSpecific{HookEventName: event, AdditionalContext: msg.Context}
+	}
 	if err := json.NewEncoder(stdout).Encode(out); err != nil {
 		log.Error().Err(err).Str("event", event).Msg("hook output failed")
 	}

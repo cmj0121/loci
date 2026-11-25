@@ -26,6 +26,9 @@ func TestGatherCountsEveryWorktree(t *testing.T) {
 	writeLog(t, filepath.Join(dir, ".git"),
 		`{"level":"info","reason":"suggest","context":300000,"suggested":true,"time":"2026-11-20T10:00:00+08:00","message":"boundary"}`,
 		`{"level":"info","context":300000,"chars":400,"time":"2026-11-20T10:01:00+08:00","message":"handoff"}`,
+		`{"level":"info","context":300000,"chars":400,"kept":true,"time":"2026-11-20T10:01:30+08:00","message":"handoff"}`,
+		`{"level":"info","to":"feat/x","time":"2026-11-20T10:02:00+08:00","message":"reminded"}`,
+		`{"level":"info","to":"feat/x","time":"2026-11-20T10:03:00+08:00","message":"gated"}`,
 		`{"level":"info","reason":"revisit","suggested":false,"time":"2026-11-20T11:00:00+08:00","message":"boundary"}`,
 		`not json`,
 		`{"level":"info","reason":"suggest","context":150000,"time":"2026-11-21T09:00:00+08:00","message":"boundary"}`,
@@ -46,6 +49,9 @@ func TestGatherCountsEveryWorktree(t *testing.T) {
 	}
 	if s.Logs != 2 || s.Switches != 4 || s.Suggested != 3 || s.Handoffs != 2 || s.Replaced != 1 || s.Waiting != 1 || s.Failures != 1 {
 		t.Errorf("stats = %+v", s)
+	}
+	if s.Reminded != 1 || s.Gated != 1 {
+		t.Errorf("reminded %d gated %d", s.Reminded, s.Gated)
 	}
 	if s.Cleared != 500_000 || s.Reasons[ReasonRevisit] != 1 {
 		t.Errorf("cleared %d reasons %v", s.Cleared, s.Reasons)

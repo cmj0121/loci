@@ -22,6 +22,7 @@ type Verdict struct {
 	Context   int      // tokens, read only for a switch to a new, short-lived branch
 	Threshold int      // the threshold the context was compared with
 	Replaced  *Pending // an earlier suggestion that nobody acted on
+	touched   bool     // the session's Seen moved: the state needs a write
 }
 
 // observe applies one look at the current branch to st. It is the whole rule,
@@ -29,10 +30,11 @@ type Verdict struct {
 // the branch changed to one that is new and short-lived, so the common case
 // costs no git calls and no transcript read.
 func observe(st *State, session, branch string, at time.Time, config func() Config, context func() int) Verdict {
-	if session != "" && session != st.Session {
-		st.Session, st.Visited = session, nil
-	}
+	me := st.session(session, at)
 	v := Verdict{From: st.Branch, To: branch}
+	if at.Sub(me.Seen) >= seenEvery {
+		me.Seen, v.touched = at, true
+	}
 	if branch == "" || branch == st.Branch {
 		v.From = ""
 		return v
@@ -42,8 +44,8 @@ func observe(st *State, session, branch string, at time.Time, config func() Conf
 		v.Reason = ReasonFirst
 		return v
 	}
-	revisit := slices.Contains(st.Visited, branch)
-	st.Visited = remember(st.Visited, v.From)
+	revisit := slices.Contains(me.Visited, branch)
+	me.Visited = remember(me.Visited, v.From)
 	if revisit {
 		v.Reason = ReasonRevisit
 		return v
@@ -59,6 +61,6 @@ func observe(st *State, session, branch string, at time.Time, config func() Conf
 		return v
 	}
 	v.Reason, v.Replaced = ReasonSuggest, st.Pending
-	st.Pending = &Pending{From: v.From, To: branch, Context: v.Context, At: at}
+	st.Pending = &Pending{From: v.From, To: branch, Context: v.Context, At: at, Session: session}
 	return v
 }

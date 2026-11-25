@@ -14,6 +14,30 @@ const DefaultThreshold = 100_000
 // not a new task. Add more with `git config --add loci.skip <glob>`.
 var defaultSkip = []string{"main", "master", "develop", "dev", "stage", "staging", "pre-release", "release", "release/*", "*production*"}
 
+// Nudge levels: how hard Loci presses for /clear once a handoff is waiting.
+// Set with `git config loci.nudge <level>`.
+const (
+	NudgeOff    = "off"    // tell the agent only, as before Loci told the user
+	NudgeNotice = "notice" // also show the user the suggestion, and remind at the turn's end
+	NudgeAsk    = "ask"    // notice, and have the agent ask the user with AskUserQuestion
+	NudgeGate   = "gate"   // notice, and hold the user's next prompt once until they choose
+)
+
+// DefaultNudge is the level when loci.nudge is unset or not a level.
+const DefaultNudge = NudgeGate
+
+// loadNudge reads loci.nudge of the repository at dir.
+func loadNudge(dir string) string {
+	v, err := git(dir, "config", "--get", "loci.nudge")
+	switch v = strings.ToLower(strings.TrimSpace(v)); {
+	case err != nil:
+		return DefaultNudge
+	case v == NudgeOff, v == NudgeNotice, v == NudgeAsk, v == NudgeGate:
+		return v
+	}
+	return DefaultNudge
+}
+
 // Config is the rule's settings for one repository.
 type Config struct {
 	Threshold int      // context tokens at which a switch is a handoff
