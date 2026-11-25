@@ -39,6 +39,19 @@ func hook(t *testing.T, sub string, fields map[string]string) string {
 	return out
 }
 
+// notice is the systemMessage Claude Code shows the user.
+func notice(t *testing.T, out string) string {
+	t.Helper()
+	if out == "" {
+		return ""
+	}
+	var o hookOutput
+	if err := json.Unmarshal([]byte(out), &o); err != nil {
+		t.Fatalf("hook output %q: %v", out, err)
+	}
+	return o.SystemMessage
+}
+
 func additional(t *testing.T, out string) string {
 	t.Helper()
 	if out == "" {
@@ -83,10 +96,16 @@ func TestPostToolUseSuggestsAtANewBranch(t *testing.T) {
 		t.Fatalf("same branch said %q", out)
 	}
 	sh(t, dir, "git", "switch", "-q", "-c", "fix/gh-2-b")
-	msg := additional(t, hook(t, "post-tool-use", in))
+	out := hook(t, "post-tool-use", in)
+	msg := additional(t, out)
 	for _, want := range []string{"feat/gh-1-a to fix/gh-2-b", "250k tokens", "/clear"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("message misses %q: %s", want, msg)
+		}
+	}
+	for _, want := range []string{"fix/gh-2-b", "250k tokens", "Run /clear"} {
+		if n := notice(t, out); !strings.Contains(n, want) {
+			t.Errorf("notice misses %q: %s", want, n)
 		}
 	}
 	st, _ := loadState(filepath.Join(dir, ".git"))
@@ -253,6 +272,64 @@ func TestSessionStartInjectsTheHandoffOnce(t *testing.T) {
 	last := ls[len(ls)-1]
 	if last["message"] != msgHandoff || last["context"] != 250000.0 || last["source"] != "clear" || last["chars"] != float64(len(md)) {
 		t.Errorf("log = %v", last)
+	}
+}
+
+func TestSessionStartTellsTheUser(t *testing.T) {
+	dir := pendingRepo(t)
+	out := hook(t, "session-start", map[string]string{"session_id": "s2", "cwd": dir, "source": "clear"})
+	if n := notice(t, out); !strings.Contains(n, "fix/gh-2-b") {
+		t.Errorf("notice = %q", n)
+	}
+	if st, _ := loadState(filepath.Join(dir, ".git")); st.Sessions["s1"] != nil {
+		t.Error("the cleared session is still remembered")
+	}
+}
+
+func TestSessionStartBesideALiveSessionKeepsTheHandoff(t *testing.T) {
+	dir := pendingRepo(t) // s1 crossed the boundary just now
+	if md := additional(t, hook(t, "session-start", map[string]string{"session_id": "s9", "cwd": dir, "source": "startup"})); md == "" {
+		t.Fatal("the new session got no copy")
+	}
+	if st, _ := loadState(filepath.Join(dir, ".git")); st.Pending == nil {
+		t.Fatal("a session beside s1 took its handoff")
+	}
+	if ls := logLines(t, dir); ls[len(ls)-1]["kept"] != true {
+		t.Errorf("log = %v", ls[len(ls)-1])
+	}
+	if additional(t, hook(t, "session-start", map[string]string{"session_id": "s2", "cwd": dir, "source": "clear"})) == "" {
+		t.Error("s1's /clear got nothing")
+	}
+}
+
+func TestSessionStartAfterTheSessionWentQuietTakesTheHandoff(t *testing.T) {
+	dir := pendingRepo(t)
+	defer func(f func() time.Time) { now = f }(now)
+	at := time.Now()
+	now = func() time.Time { return at.Add(liveFor + time.Minute) }
+	if additional(t, hook(t, "session-start", map[string]string{"session_id": "s9", "cwd": dir, "source": "startup"})) == "" {
+		t.Fatal("startup got nothing")
+	}
+	if st, _ := loadState(filepath.Join(dir, ".git")); st.Pending != nil {
+		t.Error("the handoff of a quiet session was kept")
+	}
+}
+
+func TestLegacyStateKeepsWhatTheSessionVisited(t *testing.T) {
+	gd := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(gd, "loci"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old := `{"branch":"feat/b","session":"s1","visited":["feat/a"]}`
+	if err := os.WriteFile(statePath(gd), []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	st, err := loadState(gd)
+	if err != nil || st.Branch != "feat/b" || st.Sessions["s1"] == nil || st.Sessions["s1"].Visited[0] != "feat/a" {
+		t.Fatalf("legacy state = %+v, %v", st, err)
+	}
+	if v := see(&st, "s1", "feat/a", 300_000); v.Reason != ReasonRevisit {
+		t.Errorf("after the upgrade: %q", v.Reason)
 	}
 }
 

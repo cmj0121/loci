@@ -39,7 +39,7 @@ func TestObserveSequence(t *testing.T) {
 }
 
 func TestObserveReadsNothingUnlessItMust(t *testing.T) {
-	st := State{Branch: "feat/a", Session: "s", Visited: []string{"feat/b"}}
+	st := State{Branch: "feat/a", Sessions: map[string]*Session{"s": {Visited: []string{"feat/b"}}}}
 	calls := 0
 	cfg := func() Config { calls++; return defaultConfig() }
 	ctx := func() int { calls++; return 1 << 20 }
@@ -56,7 +56,7 @@ func TestObserveReadsNothingUnlessItMust(t *testing.T) {
 }
 
 func TestObserveReplacesAnUnusedSuggestion(t *testing.T) {
-	st := State{Branch: "feat/a", Session: "s"}
+	st := State{Branch: "feat/a"}
 	see(&st, "s", "feat/b", 200_000)
 	v := see(&st, "s", "feat/c", 250_000)
 	if v.Reason != ReasonSuggest || v.Replaced == nil || v.Replaced.To != "feat/b" {
@@ -97,5 +97,47 @@ func TestRememberKeepsOrderAndBound(t *testing.T) {
 	}
 	if len(v) != maxVisited || v[len(v)-1] != fmt.Sprint(maxVisited+9) {
 		t.Errorf("len %d last %s", len(v), v[len(v)-1])
+	}
+}
+
+func TestObserveKeepsSessionsApart(t *testing.T) {
+	var st State
+	see(&st, "s1", "feat/a", 300_000)
+	see(&st, "s1", "feat/b", 300_000) // s1 leaves feat/a
+	if v := see(&st, "s2", "feat/b", 300_000); v.Reason != ReasonSame {
+		t.Fatalf("s2 on the shared HEAD: %q", v.Reason)
+	}
+	if v := see(&st, "s1", "feat/a", 300_000); v.Reason != ReasonRevisit {
+		t.Errorf("s1 back to feat/a after s2 ran: %q, want revisit", v.Reason)
+	}
+	if v := see(&st, "s2", "feat/c", 300_000); v.Reason != ReasonSuggest || st.Pending.Session != "s2" {
+		t.Errorf("s2 to a new branch: %q, pending %+v", v.Reason, st.Pending)
+	}
+}
+
+func TestObserveTouchesSeenAtMostEveryMinute(t *testing.T) {
+	var st State
+	at := t0
+	step := func(d time.Duration) bool {
+		at = at.Add(d)
+		return observe(&st, "s", "feat/a", at, defaultConfig, func() int { return 0 }).touched
+	}
+	if !step(0) || step(10*time.Second) || !step(seenEvery) {
+		t.Errorf("seen = %v", st.Sessions["s"].Seen)
+	}
+}
+
+func TestStateForgetsOldAndExtraSessions(t *testing.T) {
+	var st State
+	st.session("old", t0).Seen = t0
+	at := t0.Add(pendingTTL + time.Hour)
+	for i := range maxSessions + 3 {
+		st.session(fmt.Sprint(i), at).Seen = at.Add(time.Duration(i) * time.Second)
+	}
+	if len(st.Sessions) != maxSessions || st.Sessions["old"] != nil || st.Sessions["0"] != nil {
+		t.Errorf("sessions = %d, old %v", len(st.Sessions), st.Sessions["old"])
+	}
+	if st.Sessions[fmt.Sprint(maxSessions+2)] == nil {
+		t.Error("the newest session was dropped")
 	}
 }

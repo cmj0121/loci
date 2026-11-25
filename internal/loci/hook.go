@@ -26,6 +26,9 @@ type HookInput struct {
 }
 
 type hookOutput struct {
+	// SystemMessage is shown to the user by Claude Code itself, so a
+	// suggestion reaches them even when the agent does not pass it on.
+	SystemMessage      string `json:"systemMessage,omitempty"`
 	HookSpecificOutput struct {
 		HookEventName     string `json:"hookEventName"`
 		AdditionalContext string `json:"additionalContext"`
@@ -52,8 +55,11 @@ func locate(dir string) (worktree, error) {
 	return w, nil
 }
 
-// hookFunc handles one hook event; "" means there is nothing to tell the agent.
-type hookFunc func(in HookInput, w worktree, log zerolog.Logger) (string, error)
+// reply is what a hook tells: Context to the agent, Notice to the user.
+type reply struct{ Context, Notice string }
+
+// hookFunc handles one hook event; a zero reply means there is nothing to tell.
+type hookFunc func(in HookInput, w worktree, log zerolog.Logger) (reply, error)
 
 // now is replaced in tests.
 var now = time.Now
@@ -61,17 +67,16 @@ var now = time.Now
 // PostToolUse watches the branch after each shell command and, at a switch to
 // a branch new to this session on a large context, asks the agent to suggest
 // /clear.
-func PostToolUse(in HookInput, w worktree, log zerolog.Logger) (string, error) {
+func PostToolUse(in HookInput, w worktree, log zerolog.Logger) (reply, error) {
 	if in.AgentID != "" {
 		// A subagent cannot /clear and its context is not the main session's.
 		// A branch it switched is judged at the main session's next command.
-		return "", nil
+		return reply{}, nil
 	}
 	st, err := loadState(w.gitDir)
 	if err != nil {
-		return "", err
+		return reply{}, err
 	}
-	before := st.Session
 	v := observe(&st, in.SessionID, w.branch, now(),
 		func() Config { return loadConfig(in.Cwd) },
 		func() int {
@@ -81,14 +86,14 @@ func PostToolUse(in HookInput, w worktree, log zerolog.Logger) (string, error) {
 			}
 			return ctx
 		})
-	if v.Reason == ReasonSame && st.Session == before {
-		return "", nil // nothing changed: no write
+	if v.Reason == ReasonSame && !v.touched {
+		return reply{}, nil // nothing changed: no write
 	}
 	if err := saveState(w.gitDir, st); err != nil {
-		return "", err
+		return reply{}, err
 	}
 	if v.Reason == ReasonSame || v.Reason == ReasonFirst {
-		return "", nil
+		return reply{}, nil
 	}
 	if p := v.Replaced; p != nil {
 		log.Info().Str("session", in.SessionID).Str("from", p.From).Str("to", p.To).Int("context", p.Context).Msg(msgReplaced)
@@ -99,61 +104,78 @@ func PostToolUse(in HookInput, w worktree, log zerolog.Logger) (string, error) {
 	}
 	ev.Bool("suggested", v.Reason == ReasonSuggest).Msg(msgBoundary)
 	if v.Reason != ReasonSuggest {
-		return "", nil
+		return reply{}, nil
 	}
-	return fmt.Sprintf("Loci: the branch changed from %s to %s while the context is %dk tokens. "+
-		"This is a task boundary. Tell the user they can run /clear now; Loci will hand the "+
-		"git state of %s to the new session, so nothing from git is lost.", v.From, v.To, v.Context/1000, v.To), nil
+	return reply{
+		Context: fmt.Sprintf("Loci: the branch changed from %s to %s while the context is %dk tokens. "+
+			"This is a task boundary. Tell the user they can run /clear now; Loci will hand the "+
+			"git state of %s to the new session, so nothing from git is lost.", v.From, v.To, v.Context/1000, v.To),
+		Notice: fmt.Sprintf("Loci: new task on %s with %dk tokens of context. Run /clear to start it "+
+			"fresh; the git state of %s is handed to the new session.", v.To, v.Context/1000, v.To),
+	}, nil
 }
 
-// SessionStart hands a pending boundary over to a cleared or new session.
-func SessionStart(in HookInput, w worktree, log zerolog.Logger) (string, error) {
+// SessionStart hands a pending boundary over to a cleared or new session. A
+// new session started beside the one that crossed the boundary, while that
+// one is still live, gets a copy: the handoff stays for that session's /clear.
+func SessionStart(in HookInput, w worktree, log zerolog.Logger) (reply, error) {
 	if in.Source != "clear" && in.Source != "startup" {
-		return "", nil // resume and compact keep their context: nothing to hand over
+		return reply{}, nil // resume and compact keep their context: nothing to hand over
 	}
 	st, err := loadState(w.gitDir)
 	if err != nil || st.Pending == nil {
-		return "", err
+		return reply{}, err
 	}
 	p := st.Pending
-	st.Pending = nil
+	at := now()
+	age := at.Sub(p.At)
+	keep := in.Source == "startup" && age <= pendingTTL && p.Session != in.SessionID && st.live(p.Session, at)
+	if !keep {
+		st.Pending = nil
+		if in.Source == "clear" {
+			delete(st.Sessions, p.Session) // cleared: that session id is gone
+		}
+	}
 	if w.branch != "" {
 		st.Branch = w.branch
 	}
 	if err := saveState(w.gitDir, st); err != nil {
-		return "", err
+		return reply{}, err
 	}
-	if age := now().Sub(p.At); age > pendingTTL {
+	if age > pendingTTL {
 		log.Info().Str("session", in.SessionID).Str("to", p.To).Dur("age", age).Msg(msgStale)
-		return "", nil
+		return reply{}, nil
 	}
 	f, err := Collect(in.Cwd, "", p.From)
 	if err != nil {
-		return "", err
+		return reply{}, err
 	}
 	md := f.Markdown()
 	log.Info().Str("session", in.SessionID).Str("source", in.Source).Str("from", p.From).Str("to", f.Branch).
-		Int("context", p.Context).Int("chars", len(md)).Msg(msgHandoff)
-	return md, nil
+		Int("context", p.Context).Int("chars", len(md)).Bool("kept", keep).Msg(msgHandoff)
+	return reply{
+		Context: md,
+		Notice:  fmt.Sprintf("Loci: handed the git state of %s to this session.", f.Branch),
+	}, nil
 }
 
 // SubagentStop records the context a subagent ended with: tokens its work
 // read that never entered the main session. It tells the agent nothing.
-func SubagentStop(in HookInput, w worktree, log zerolog.Logger) (string, error) {
+func SubagentStop(in HookInput, w worktree, log zerolog.Logger) (reply, error) {
 	if in.AgentID == "" || in.AgentTranscriptPath == "" {
-		return "", nil
+		return reply{}, nil
 	}
 	ctx, err := SubagentTokens(in.AgentTranscriptPath)
 	if err != nil {
 		log.Warn().Err(err).Str("transcript", in.AgentTranscriptPath).Msg("subagent transcript unreadable")
-		return "", nil
+		return reply{}, nil
 	}
 	if ctx == 0 {
-		return "", nil
+		return reply{}, nil
 	}
 	log.Info().Str("session", in.SessionID).Str("agent", in.AgentID).Str("type", in.AgentType).
 		Int("context", ctx).Msg(msgSubagent)
-	return "", nil
+	return reply{}, nil
 }
 
 // runHook reads a hook payload, runs fn and writes Claude Code's hook JSON.
@@ -174,12 +196,13 @@ func runHook(event string, fn hookFunc, stdin io.Reader, stdout io.Writer) {
 		log.Error().Err(err).Str("event", event).Msg(msgFailed)
 		return
 	}
-	if msg == "" {
+	if msg == (reply{}) {
 		return
 	}
 	var out hookOutput
+	out.SystemMessage = msg.Notice
 	out.HookSpecificOutput.HookEventName = event
-	out.HookSpecificOutput.AdditionalContext = msg
+	out.HookSpecificOutput.AdditionalContext = msg.Context
 	if err := json.NewEncoder(stdout).Encode(out); err != nil {
 		log.Error().Err(err).Str("event", event).Msg("hook output failed")
 	}

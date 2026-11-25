@@ -62,8 +62,10 @@ handoff 會列出 repository、branch 和它的 issue、上一個 branch、base 
 從 base 以來的 commit 和改動的檔案，以及還沒 commit 的內容。它也會告訴新的 session：issue 的內文
 和上面的決定不在它的 context 裡。
 
-Loci 自己不會執行 `/clear`，由你決定。handoff 會等下一個清空後或全新的 session，最多等 24 小時。
-hook 永遠不會讓 agent 失敗：錯誤都寫進 `.git/loci/log`。
+Loci 自己不會執行 `/clear`，由你決定。建議會直接顯示給你，不只告訴 agent，所以即使 agent 沒轉告，
+你也看得到。handoff 會等下一個清空後或全新的 session，最多等 24 小時。共用同一個 worktree 的多個
+session 各自記錄走過的 branch；如果跨過邊界的 session 還在活動，旁邊新開的 session 只會拿到一份副本，
+handoff 會留給原本那個 session 的 `/clear`。hook 永遠不會讓 agent 失敗：錯誤都寫進 `.git/loci/log`。
 
 ## 安裝
 

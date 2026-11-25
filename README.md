@@ -63,8 +63,12 @@ The handoff names the repository, the branch and its issue, the previous branch,
 merge-base, the upstream, the commits and changed files since the base, and what is uncommitted.
 It also tells the new session that the issue's text and decisions are not in its context.
 
-Loci never runs `/clear` itself: you decide. A handoff waits for the next cleared or new session
-for 24 hours. Hooks never fail the agent: errors go to `.git/loci/log`.
+Loci never runs `/clear` itself: you decide. The suggestion is shown to you directly, not only told
+to the agent, so it reaches you even when the agent does not pass it on. A handoff waits for the
+next cleared or new session for 24 hours. Sessions that share a worktree keep what they visited
+apart, and a session started beside the one that crossed the boundary, while that one is still
+active, gets a copy and leaves the handoff for its `/clear`. Hooks never fail the agent: errors go
+to `.git/loci/log`.
 
 ## Install
 
