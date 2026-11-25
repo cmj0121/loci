@@ -3,6 +3,7 @@ package loci
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -258,6 +259,48 @@ func TestOursStatusMatchesShellQuotedExe(t *testing.T) {
 			if !oursStatus.MatchString(c) {
 				t.Errorf("oursStatus(%q) = false", c)
 			}
+		}
+	}
+}
+
+func TestStableExePrefersTheSymlinkOnPath(t *testing.T) {
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+	real := filepath.Join(dir, "Caskroom", "loci", "0.1.2", "loci")
+	if err := os.MkdirAll(filepath.Dir(real), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(real, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "bin", "loci")
+	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(dir, "other", "loci")
+	if err := os.MkdirAll(filepath.Dir(other), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(other, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	found := func(p string, err error) func(string) (string, error) {
+		return func(string) (string, error) { return p, err }
+	}
+	for name, c := range map[string]struct {
+		look func(string) (string, error)
+		want string
+	}{
+		"symlink on PATH":       {found(link, nil), link},
+		"another loci on PATH":  {found(other, nil), real},
+		"no loci on PATH":       {found("", exec.ErrNotFound), real},
+		"relative PATH entry":   {found("bin/loci", nil), real},
+		"the real file on PATH": {found(real, nil), real},
+	} {
+		if got := stableExe(real, c.look); got != c.want {
+			t.Errorf("%s: %s, want %s", name, got, c.want)
 		}
 	}
 }

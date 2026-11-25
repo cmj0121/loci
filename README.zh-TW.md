@@ -98,7 +98,9 @@ make build
 binary。
 
 `loci install` 會在 repository 的 `.claude/settings.local.json` 加上五個 hook 和 status line，這個
-檔案不會分享給團隊。其他設定都會保留，你原本的 status line 會先執行，行尾再接上 Loci 的狀態：
+檔案不會分享給團隊。如果 `PATH` 上的 `loci` 就是同一個 binary（例如 Homebrew 的 `/opt/homebrew/bin/loci`），
+hook 會呼叫它，所以 `brew upgrade` 之後 hook 仍然有效。其他設定都會保留，你原本的 status line 會先執行，
+行尾再接上 Loci 的狀態：
 
 ```text
 <你的 status line> · loci working · 1.2M/340k saved · new branch: /clear to hand off · 1 failed
