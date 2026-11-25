@@ -61,6 +61,9 @@ func additional(t *testing.T, out string) string {
 	if err := json.Unmarshal([]byte(out), &o); err != nil {
 		t.Fatalf("hook output %q: %v", out, err)
 	}
+	if o.HookSpecificOutput == nil {
+		return ""
+	}
 	return o.HookSpecificOutput.AdditionalContext
 }
 

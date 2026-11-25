@@ -67,6 +67,18 @@ Loci 自己不會執行 `/clear`，由你決定。建議會直接顯示給你，
 session 各自記錄走過的 branch；如果跨過邊界的 session 還在活動，旁邊新開的 session 只會拿到一份副本，
 handoff 會留給原本那個 session 的 `/clear`。hook 永遠不會讓 agent 失敗：錯誤都寫進 `.git/loci/log`。
 
+有 handoff 在等時，Loci 催 `/clear` 的力道由 `loci.nudge` 決定：
+
+| 層級           | 切換 branch 時          | 回合結束時 | 你的下一個 prompt                  |
+| -------------- | ----------------------- | ---------- | ---------------------------------- |
+| `off`          | 只告訴 agent            |            |                                    |
+| `notice`       | 告訴你，也告訴 agent    | 提醒一次   |                                    |
+| `ask`          | 同 notice；agent 會問你 | 提醒一次   |                                    |
+| `gate`（預設） | 同 notice               | 提醒一次   | 攔一次：`/clear`，或再送一次就放行 |
+
+每個 handoff 只攔一次，而且只攔跨過邊界的那個 session。slash command，以及 Claude Code 自己開啟的
+回合，一律放行。
+
 ## 安裝
 
 Loci 是一個 Go binary。macOS 或 Linux 可以用 Homebrew 安裝預先 build 好的版本：
@@ -85,7 +97,7 @@ make build
 [releases](https://github.com/cmj0121/loci/releases) 頁面也有 linux 與 darwin 的 amd64、arm64
 binary。
 
-`loci install` 會在 repository 的 `.claude/settings.local.json` 加上三個 hook 和 status line，這個
+`loci install` 會在 repository 的 `.claude/settings.local.json` 加上五個 hook 和 status line，這個
 檔案不會分享給團隊。其他設定都會保留，你原本的 status line 會先執行，行尾再接上 Loci 的狀態：
 
 ```text
@@ -112,6 +124,8 @@ status line。
 | `loci hook post-tool-use`          | PostToolUse hook（JSON 從 stdin 輸入）             |
 | `loci hook session-start`          | SessionStart hook（JSON 從 stdin 輸入）            |
 | `loci hook subagent-stop`          | SubagentStop hook（JSON 從 stdin 輸入）            |
+| `loci hook stop`                   | Stop hook：handoff 在等時提醒一次                  |
+| `loci hook user-prompt-submit`     | UserPromptSubmit hook：`loci.nudge` 的 gate        |
 
 每個指令都接受 `-C <dir>`；`stats` 和 `replay` 接受 `--json`。
 
@@ -136,6 +150,7 @@ total           782.3M → 482.7M (-38%)          96.8M → 67.7M (-30%)
 | `loci.threshold` | `100000`                                   | 切換時 context 達到多少 token 才 handoff |
 | `loci.skip`      | `main`、`master`、`develop`、`release/*`…… | 其他長期 branch 的 glob（用 `--add`）    |
 | `loci.base`      | `origin/main`、`origin/master`……           | handoff 用來比較的 base                  |
+| `loci.nudge`     | `gate`                                     | `off`、`notice`、`ask` 或 `gate`，見上文 |
 
 ## 限制
 

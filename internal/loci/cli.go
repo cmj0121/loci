@@ -39,6 +39,22 @@ type HookCmd struct {
 	PostToolUse  PostToolUseCmd  `cmd:"" name:"post-tool-use" help:"PostToolUse: suggest /clear at a switch to a new branch."`
 	SessionStart SessionStartCmd `cmd:"" name:"session-start" help:"SessionStart: inject a pending handoff."`
 	SubagentStop SubagentStopCmd `cmd:"" name:"subagent-stop" help:"SubagentStop: record the context a subagent kept out of the main session."`
+	Stop         StopCmd         `cmd:"" name:"stop" help:"Stop: remind the user of a waiting handoff once."`
+	UserPrompt   UserPromptCmd   `cmd:"" name:"user-prompt-submit" help:"UserPromptSubmit: at loci.nudge gate, hold the next prompt once."`
+}
+
+type StopCmd struct{}
+
+func (StopCmd) Run(e *env) error {
+	runHook("Stop", Stop, e.stdin, e.stdout)
+	return nil
+}
+
+type UserPromptCmd struct{}
+
+func (UserPromptCmd) Run(e *env) error {
+	runHook("UserPromptSubmit", UserPromptSubmit, e.stdin, e.stdout)
+	return nil
 }
 
 type PostToolUseCmd struct{}

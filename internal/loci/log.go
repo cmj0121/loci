@@ -14,6 +14,8 @@ const (
 	msgHandoff  = "handoff"  // a handoff injected into a new session
 	msgStale    = "stale"    // a suggestion picked up too late and dropped
 	msgSubagent = "subagent" // a subagent stopped; its context never reached the main session
+	msgReminded = "reminded" // the user was reminded of a waiting handoff at a turn's end
+	msgGated    = "gated"    // the user's prompt was held once for a waiting handoff
 	msgFailed   = "hook failed"
 )
 

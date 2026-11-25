@@ -27,11 +27,13 @@ type Session struct {
 
 // Pending records a boundary whose handoff the next session should receive.
 type Pending struct {
-	From    string    `json:"from"`
-	To      string    `json:"to"`
-	Context int       `json:"context"`
-	At      time.Time `json:"at"`
-	Session string    `json:"session,omitempty"` // the session that crossed the boundary
+	From     string    `json:"from"`
+	To       string    `json:"to"`
+	Context  int       `json:"context"`
+	At       time.Time `json:"at"`
+	Session  string    `json:"session,omitempty"`  // the session that crossed the boundary
+	Reminded bool      `json:"reminded,omitempty"` // the user was reminded at a turn's end
+	Gated    bool      `json:"gated,omitempty"`    // the user's prompt was held once for it
 }
 
 // legacyState is the state.json of Loci before sessions were kept apart.
