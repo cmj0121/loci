@@ -101,8 +101,9 @@ The [releases](https://github.com/cmj0121/loci/releases) page also has the binar
 darwin on amd64 and arm64.
 
 `loci install` adds five hooks and a status line to the repository's `.claude/settings.local.json`,
-a file that is not shared with the team. It keeps your other settings, and runs your own status
-line first, so the line ends in Loci's state:
+a file that is not shared with the team. It calls the `loci` on your `PATH` when that is the same
+binary, such as Homebrew's `/opt/homebrew/bin/loci`, so the hooks keep working after `brew upgrade`.
+It keeps your other settings, and runs your own status line first, so the line ends in Loci's state:
 
 ```text
 <your status line> · loci working · 1.2M/340k saved · new branch: /clear to hand off · 1 failed

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -120,7 +121,7 @@ func (c *InstallCmd) Run(e *env) error {
 	if err != nil {
 		return err
 	}
-	path, changed, err := Install(top, exe, c.Uninstall)
+	path, changed, err := Install(top, stableExe(exe, exec.LookPath), c.Uninstall)
 	if err != nil {
 		return err
 	}

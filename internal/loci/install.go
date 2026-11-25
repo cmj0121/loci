@@ -17,6 +17,21 @@ var ours = regexp.MustCompile(`loci[^/\s']*'? hook (post-tool-use|session-start|
 // from the start, its binary, bare, by path or quoted, then the subcommand.
 var oursStatus = regexp.MustCompile(`^(?:'(?:[^']|'\\'')*/|'|[A-Za-z0-9_./:@%+=,-]*/)?loci[^/\s']*'? statusline( |$)`)
 
+// stableExe is the path the hooks should call for the binary at real: the
+// loci on PATH when it is this same file through a symlink, such as Homebrew's
+// /opt/homebrew/bin/loci, so an upgrade, which moves the versioned file it
+// points at, leaves the hooks working. Otherwise it is real itself.
+func stableExe(real string, lookPath func(string) (string, error)) string {
+	p, err := lookPath("loci")
+	if err != nil || !filepath.IsAbs(p) || p == real {
+		return real
+	}
+	if r, err := filepath.EvalSymlinks(p); err == nil && r == real {
+		return p
+	}
+	return real
+}
+
 // settingsPath is the repository-local Claude Code settings file, not shared with the team.
 func settingsPath(repo string) string { return filepath.Join(repo, ".claude", "settings.local.json") }
 
